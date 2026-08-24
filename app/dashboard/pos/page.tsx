@@ -1351,9 +1351,32 @@ export default function POSPage() {
 
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:border-none print:p-0">
             
+            <style jsx global>{`
+              @media print {
+                body * {
+                  visibility: hidden;
+                }
+                .fixed.inset-0, .fixed.inset-0 * {
+                  visibility: visible;
+                }
+                .fixed.inset-0 {
+                  position: absolute;
+                  left: 0;
+                  top: 0;
+                  width: 100%;
+                  height: auto;
+                  background: white !important;
+                  display: block !important;
+                }
+                .print\\:hidden {
+                  display: none !important;
+                }
+              }
+            `}</style>
+
             <div className="flex justify-between items-start border-b border-slate-200 pb-4 print:hidden">
               <div>
                 <h3 className="text-lg font-black text-slate-950">GST Tax Invoice</h3>
@@ -1380,7 +1403,7 @@ export default function POSPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer Details</span>
                   <strong className="text-slate-950">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</strong>
@@ -1401,21 +1424,34 @@ export default function POSPage() {
                     <th className="p-2.5">Batch</th>
                     <th className="p-2.5">Qty</th>
                     <th className="p-2.5">Unit Price</th>
+                    <th className="p-2.5">Disc %</th>
+                    <th className="p-2.5">Disc Amt</th>
                     <th className="p-2.5">GST %</th>
                     <th className="p-2.5 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {selectedInvoice.sale_items?.map((item: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                      <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                      <td className="p-2.5">{item.quantity_sold}</td>
-                      <td className="p-2.5 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
-                      <td className="p-2.5">{item.gst_percent}%</td>
-                      <td className="p-2.5 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {selectedInvoice.sale_items?.map((item: any, idx: number) => {
+                    const qty = Number(item.quantity_sold) || 1;
+                    const unitPrice = Number(item.unit_price) || 0;
+                    const grossItemTotal = unitPrice * qty;
+                    const netItemTotal = Number(item.total_price) || 0;
+                    const itemDiscVal = Math.max(0, grossItemTotal - netItemTotal);
+                    const itemDiscPct = grossItemTotal > 0 ? ((itemDiscVal / grossItemTotal) * 100).toFixed(1) : '0';
+
+                    return (
+                      <tr key={idx}>
+                        <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
+                        <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                        <td className="p-2.5">{qty}</td>
+                        <td className="p-2.5 font-mono">₹{unitPrice.toFixed(2)}</td>
+                        <td className="p-2.5 text-amber-700 font-bold">{Number(itemDiscPct) > 0 ? `${itemDiscPct}%` : '—'}</td>
+                        <td className="p-2.5 font-mono text-red-600">{itemDiscVal > 0 ? `-₹${itemDiscVal.toFixed(2)}` : '—'}</td>
+                        <td className="p-2.5">{item.gst_percent}%</td>
+                        <td className="p-2.5 text-right font-black">₹{netItemTotal.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
