@@ -238,7 +238,8 @@ export default function POSPage() {
 
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
-    const sellingPrice = batch.selling_rate || 100;
+    // FIXED: Use MRP as the primary selling price so it matches inventory MRP
+    const sellingPrice = batch.mrp || batch.selling_rate || 100;
     const availableQty = batch.stock_qty || 0;
 
     if (existingIndex > -1) {
@@ -903,7 +904,6 @@ export default function POSPage() {
               <span className="block text-[10px] text-amber-600 font-black">Alt + F4</span> Park Txn
             </button>
             
-            {/* Parked List button styled uniformly with other buttons */}
             <button onClick={() => setShowParkedModal(true)} className="bg-white hover:bg-slate-50 text-slate-800 p-3 rounded-2xl text-xs font-bold text-center border border-slate-200 shadow-sm relative">
               <span className="block text-[10px] text-amber-600 font-black">PARKED LIST</span> View ({parkedTransactions.length})
             </button>
@@ -962,7 +962,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Optional Split Payment Inputs (Un-hardcoded from 0 for pharmacist control) */}
+          {/* Optional Split Payment Inputs */}
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-2 shadow-sm">
             <div className="flex justify-between items-center text-xs font-black text-slate-950 border-b border-slate-100 pb-1.5">
               <span>Optional Split Pay</span>
@@ -1108,7 +1108,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Show Journals Modal with Separate Return & Cancel Buttons */}
+      {/* Show Journals Modal */}
       {showJournalsModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1117,7 +1117,6 @@ export default function POSPage() {
               <button onClick={() => setShowJournalsModal(false)} className="text-slate-500 hover:text-slate-900 font-bold">✕</button>
             </div>
 
-            {/* Search Filters for Journals */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <input
                 type="text"
