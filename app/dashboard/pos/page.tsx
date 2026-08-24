@@ -64,17 +64,13 @@ export default function POSPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
+      const orgId = user.user_metadata?.organization_id;
 
-      if (profile?.organization_id) {
+      if (orgId) {
         const { data } = await supabase
           .from('products')
           .select('*, product_batches(*)')
-          .eq('organization_id', profile.organization_id)
+          .eq('organization_id', orgId)
           .ilike('product_name', `%${searchQuery}%`)
           .limit(5);
 
@@ -87,9 +83,9 @@ export default function POSPage() {
 
   const addToCart = (product: any, batch: any) => {
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
-    const packSize = product.pack_size || 10;
-    const sellingPrice = batch.selling_rate || product.selling_price || 100;
-    const availableQty = batch.current_quantity || 0;
+    const packSize = product.units_per_pack || 10;
+    const sellingPrice = batch.selling_rate || 100;
+    const availableQty = batch.stock_qty || 0;
 
     if (existingIndex > -1) {
       const updated = [...cart];
@@ -112,7 +108,7 @@ export default function POSPage() {
           batch_number: batch.batch_number || 'DEFAULT',
           selling_price: sellingPrice,
           mrp: batch.mrp || sellingPrice,
-          gst_percentage: product.gst_percentage || 12,
+          gst_percentage: product.gst_rate || 12,
           quantity: 1,
           pack_size: packSize,
           is_loose: false,
@@ -167,79 +163,127 @@ export default function POSPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.organization_id) {
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) {
       setError('Tenant organization ID not found.');
       setLoading(false);
       return;
     }
 
-    // Format cart items for RPC function
-    const formattedItems = cart.map(item => {
-      const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
-      return {
-        id: item.id,
-        batch_number: item.batch_number,
-        quantity: item.quantity,
-        unit_price: unitPrice,
-        total_price: unitPrice * item.quantity
-      };
-    });
+    // 1. Create Customer if provided
+    let customerId = null;
+    if (customerPhone) {
+      const { data: existingCust } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('organization_id', orgId)
+        .eq('phone', customerPhone)
+        .single();
 
-    // Call atomic Supabase RPC function
-    const { data, error: rpcError } = await supabase.rpc('complete_sale_atomic', {
-      p_org_id: profile.organization_id,
-      p_user_id: user.id,
-      p_customer_phone: customerPhone || 'Walk-in',
-      p_customer_name: customerName || 'Retail Customer',
-      p_payment_method: paymentMethod,
-      p_subtotal: subtotal,
-      p_gst_total: totalGST,
-      p_total_amount: finalTotal,
-      p_items: formattedItems
-    });
-
-    if (rpcError) {
-      setError(rpcError.message);
-      setLoading(false);
-    } else if (data && data.success) {
-      setSuccessMsg(`Sale successful! Invoice: ${data.invoice_number}`);
-      setCart([]);
-      setCustomerPhone('');
-      setCustomerName('');
-      setLoading(false);
+      if (existingCust) {
+        customerId = existingCust.id;
+      } else {
+        const { data: newCust } = await supabase
+          .from('customers')
+          .insert([{ organization_id: orgId, customer_name: customerName || 'Walk-in Customer', phone: customerPhone }])
+          .select('id')
+          .single();
+        if (newCust) customerId = newCust.id;
+      }
     }
+
+    // 2. Generate Invoice Number
+    const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // 3. Insert Sale Record
+    const { data: saleData, error: saleError } = await supabase
+      .from('sales')
+      .insert([{
+        organization_id: orgId,
+        invoice_number: invoiceNumber,
+        customer_id: customerId,
+        subtotal: subtotal,
+        gst_total: totalGST,
+        final_amount: finalTotal,
+        payment_status: 'Paid'
+      }])
+      .select('id')
+      .single();
+
+    if (saleError || !saleData) {
+      setError(saleError?.message || 'Failed to create sale.');
+      setLoading(false);
+      return;
+    }
+
+    // 4. Insert Sale Items & Deduct Stock Atomically
+    for (const item of cart) {
+      const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
+      
+      // Get batch id
+      const { data: batchData } = await supabase
+        .from('product_batches')
+        .select('id, stock_qty')
+        .eq('organization_id', orgId)
+        .eq('product_id', item.id)
+        .eq('batch_number', item.batch_number)
+        .single();
+
+      if (batchData) {
+        await supabase.from('sale_items').insert([{
+          sale_id: saleData.id,
+          organization_id: orgId,
+          product_id: item.id,
+          batch_id: batchData.id,
+          quantity_sold: item.quantity,
+          unit_price: unitPrice,
+          gst_percent: item.gst_percentage,
+          total_price: unitPrice * item.quantity
+        }]);
+
+        // Deduct inventory stock
+        await supabase
+          .from('product_batches')
+          .update({ stock_qty: Math.max(0, batchData.stock_qty - item.quantity) })
+          .eq('id', batchData.id);
+      }
+    }
+
+    // 5. Insert Payment record
+    await supabase.from('payments').insert([{
+      sale_id: saleData.id,
+      organization_id: orgId,
+      payment_mode: paymentMethod,
+      amount: finalTotal
+    }]);
+
+    setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
+    setCart([]);
+    setCustomerPhone('');
+    setCustomerName('');
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
-      {/* POS Top Bar */}
       <header className="h-16 bg-slate-900 text-white px-6 flex items-center justify-between border-b border-slate-800">
         <div className="flex items-center gap-4">
           <a href="/dashboard" className="text-slate-400 hover:text-white transition flex items-center gap-1 text-xs font-medium">
             <ArrowLeft className="w-4 h-4" /> Exit POS
           </a>
-          <span className="text-lg font-bold">Ganit<span className="text-brand-yellow">Pharma</span> POS</span>
+          <span className="text-lg font-bold">Ganit<span className="text-amber-400">Pharma</span> POS</span>
         </div>
         <div className="flex items-center gap-4 text-xs">
           <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
-            Shortcut: <strong className="text-brand-yellow">F2</strong> to Search
+            Shortcut: <strong className="text-amber-400">F2</strong> to Search
           </span>
           <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
-            Atomic Inventory Lock Active
+            Tenant Isolated Session
           </span>
         </div>
       </header>
 
-      {/* Main POS Grid */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-[1600px] w-full mx-auto">
-        
-        {/* Left / Center: Search & Catalog */}
         <div className="lg:col-span-2 flex flex-col space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
@@ -263,11 +307,10 @@ export default function POSPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Scan Barcode or Search Medicine Name (Press F2)..."
-                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none"
               />
             </div>
 
-            {/* Search Dropdown Results */}
             {products.length > 0 && (
               <div className="absolute left-4 right-4 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-80 overflow-y-auto divide-y divide-slate-100">
                 {products.map((prod) => (
@@ -275,17 +318,17 @@ export default function POSPage() {
                     <div className="font-bold text-slate-900 text-sm">{prod.product_name}</div>
                     <div className="text-xs text-slate-500 mt-1 flex gap-4">
                       <span>Brand: {prod.brand || 'N/A'}</span>
-                      <span>GST: {prod.gst_percentage}%</span>
-                      <span>Pack: {prod.pack_size} units</span>
+                      <span>GST: {prod.gst_rate}%</span>
+                      <span>Pack: {prod.pack_size}</span>
                     </div>
                     <div className="mt-2 flex gap-2 flex-wrap">
                       {prod.product_batches?.map((batch: any) => (
                         <button
                           key={batch.id}
                           onClick={() => addToCart(prod, batch)}
-                          className="bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm"
+                          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm"
                         >
-                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Available Stock: {batch.current_quantity}
+                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty}
                         </button>
                       ))}
                     </div>
@@ -295,7 +338,6 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Cart Items Table */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-slate-200 font-bold text-slate-900 flex justify-between items-center">
               <span>Billing Cart ({cart.length} items)</span>
@@ -337,7 +379,7 @@ export default function POSPage() {
                               }}
                               className={`text-xs px-2 py-1 rounded font-bold ${item.is_loose ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}
                             >
-                              {item.is_loose ? `Loose (${item.quantity}/${item.pack_size})` : 'Full Pack'}
+                              {item.is_loose ? `Loose` : 'Full Pack'}
                             </button>
                           </td>
                           <td className="py-3">
@@ -367,12 +409,10 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Right: Checkout & Totals Summary */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between">
           <div className="space-y-6">
             <h3 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3">Checkout Summary</h3>
 
-            {/* Customer Details */}
             <div className="space-y-3">
               <label className="block text-xs font-semibold text-slate-600 uppercase">Customer Information</label>
               <input
@@ -380,43 +420,41 @@ export default function POSPage() {
                 placeholder="Customer Phone (Primary ID)"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
               />
               <input
                 type="text"
                 placeholder="Customer Name (Optional)"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
               />
             </div>
 
-            {/* Payment Method */}
             <div className="space-y-3">
               <label className="block text-xs font-semibold text-slate-600 uppercase">Payment Method</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setPaymentMethod('cash')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'cash' ? 'bg-amber-50 border-brand-yellow text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'cash' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
                 >
                   <Banknote className="w-4 h-4" /> Cash
                 </button>
                 <button
                   onClick={() => setPaymentMethod('upi')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'upi' ? 'bg-amber-50 border-brand-yellow text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'upi' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
                 >
                   <Smartphone className="w-4 h-4" /> UPI
                 </button>
                 <button
                   onClick={() => setPaymentMethod('card')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'card' ? 'bg-amber-50 border-brand-yellow text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'card' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
                 >
                   <CreditCard className="w-4 h-4" /> Card
                 </button>
               </div>
             </div>
 
-            {/* Calculation Totals */}
             <div className="border-t border-slate-100 pt-4 space-y-2 text-sm">
               <div className="flex justify-between text-slate-600">
                 <span>Subtotal</span>
@@ -437,13 +475,12 @@ export default function POSPage() {
             <button
               onClick={handleCompleteSale}
               disabled={loading || cart.length === 0}
-              className="w-full bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold py-4 rounded-xl shadow-md transition text-base flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold py-4 rounded-xl shadow-md transition text-base flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <CheckCircle2 className="w-5 h-5" /> {loading ? 'Processing Sale...' : 'Complete Sale & Print Invoice'}
             </button>
           </div>
         </div>
-
       </div>
     </div>
   );
