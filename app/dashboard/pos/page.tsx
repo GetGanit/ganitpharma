@@ -354,6 +354,12 @@ export default function POSPage() {
   };
 
   // Financial Calculations
+  const grossTotalWithoutAnyDiscounts = cart.reduce((acc, item) => {
+    const qtyNum = Number(item.quantity) || 0;
+    const perUnitPrice = item.selling_price / item.pack_size;
+    return acc + (perUnitPrice * qtyNum);
+  }, 0);
+
   const rawSubtotal = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
@@ -365,12 +371,8 @@ export default function POSPage() {
   const overallDiscNum = Number(overallDiscount) || 0;
   const overallDiscVal = rawSubtotal * (overallDiscNum / 100);
   const subtotal = rawSubtotal - overallDiscVal;
-  const totalDiscountAmount = cart.reduce((acc, item) => {
-    const qtyNum = Number(item.quantity) || 0;
-    const perUnitPrice = item.selling_price / item.pack_size;
-    const gross = perUnitPrice * qtyNum;
-    return acc + (gross * ((item.discount_percent || 0) / 100));
-  }, 0) + overallDiscVal;
+  
+  const totalDiscountAmount = grossTotalWithoutAnyDiscounts - subtotal;
 
   const totalGST = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
@@ -452,14 +454,14 @@ export default function POSPage() {
 
     const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // FIXED: Removed discount_total from table insert to prevent schema cache errors
+    // FIXED: Save grossTotalWithoutAnyDiscounts as subtotal so discount is properly captured
     const { data: saleData, error: saleError } = await supabase
       .from('sales')
       .insert([{
         organization_id: orgId,
         invoice_number: invoiceNumber,
         customer_id: customerId,
-        subtotal: subtotal,
+        subtotal: grossTotalWithoutAnyDiscounts,
         gst_total: totalGST,
         final_amount: finalTotal,
         payment_status: 'Paid'
@@ -1332,9 +1334,15 @@ export default function POSPage() {
 
               <div className="border-t border-slate-200 pt-3 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
-                  <span>Subtotal:</span>
+                  <span>Gross Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
+                {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
+                  <div className="flex justify-between text-red-600 font-bold">
+                    <span>Discount Applied:</span>
+                    <span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
