@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Package, Search, Plus, AlertTriangle, Calendar, ArrowLeft, Layers, ShieldCheck } from 'lucide-react';
+import { Package, Search, Plus, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -10,19 +10,19 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   
-  // New product / batch form state
   const [newProduct, setNewProduct] = useState({
     product_name: '',
     brand: '',
-    product_code: '',
-    pack_size: 10,
-    gst_percentage: 12,
+    category: 'Allopathy',
+    pack_size: '15s',
+    units_per_pack: 15,
+    gst_rate: 12,
     batch_number: '',
     expiry_date: '',
     mrp: 0,
     purchase_rate: 0,
     selling_rate: 0,
-    current_quantity: 100,
+    stock_qty: 100,
   });
 
   const router = useRouter();
@@ -40,17 +40,14 @@ export default function InventoryPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    // Get organization_id directly from user metadata or organizations table
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       let query = supabase
         .from('products')
         .select('*, product_batches(*)')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', orgId);
 
       if (searchQuery) {
         query = query.ilike('product_name', `%${searchQuery}%`);
@@ -69,25 +66,22 @@ export default function InventoryPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) return;
 
-    if (!profile?.organization_id) return;
-
-    // 1. Insert into products
+    // 1. Insert into products matching our exact schema
     const { data: prodData, error: prodError } = await supabase
       .from('products')
       .insert([
         {
-          organization_id: profile.organization_id,
+          organization_id: orgId,
           product_name: newProduct.product_name,
           brand: newProduct.brand,
-          product_code: newProduct.product_code,
-          pack_size: Number(newProduct.pack_size),
-          gst_percentage: Number(newProduct.gst_percentage),
+          category: newProduct.category,
+          unit: 'tablet',
+          pack_size: newProduct.pack_size,
+          units_per_pack: Number(newProduct.units_per_pack),
+          gst_rate: Number(newProduct.gst_rate),
         },
       ])
       .select()
@@ -98,19 +92,19 @@ export default function InventoryPage() {
       return;
     }
 
-    // 2. Insert initial batch
+    // 2. Insert initial batch matching our exact schema
     const { error: batchError } = await supabase
       .from('product_batches')
       .insert([
         {
-          organization_id: profile.organization_id,
+          organization_id: orgId,
           product_id: prodData.id,
           batch_number: newProduct.batch_number,
           expiry_date: newProduct.expiry_date,
           mrp: Number(newProduct.mrp),
           purchase_rate: Number(newProduct.purchase_rate),
           selling_rate: Number(newProduct.selling_rate),
-          current_quantity: Number(newProduct.current_quantity),
+          stock_qty: Number(newProduct.stock_qty),
         },
       ]);
 
@@ -122,22 +116,22 @@ export default function InventoryPage() {
       setNewProduct({
         product_name: '',
         brand: '',
-        product_code: '',
-        pack_size: 10,
-        gst_percentage: 12,
+        category: 'Allopathy',
+        pack_size: '15s',
+        units_per_pack: 15,
+        gst_rate: 12,
         batch_number: '',
         expiry_date: '',
         mrp: 0,
         purchase_rate: 0,
         selling_rate: 0,
-        current_quantity: 100,
+        stock_qty: 100,
       });
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Header */}
       <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition flex items-center gap-1 text-xs font-semibold">
@@ -147,13 +141,12 @@ export default function InventoryPage() {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
         >
           <Plus className="w-4 h-4" /> Add New Medicine / Batch
         </button>
       </header>
 
-      {/* Main Body */}
       <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:w-96">
@@ -163,7 +156,7 @@ export default function InventoryPage() {
               placeholder="Search product by name..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
             />
           </div>
           <div className="text-xs text-slate-500 flex items-center gap-2">
@@ -171,7 +164,6 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Inventory Table */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {loading ? (
             <div className="p-12 text-center text-slate-500 text-sm">Loading inventory data securely...</div>
@@ -194,20 +186,20 @@ export default function InventoryPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {products.map((prod) => {
-                  const totalStock = prod.product_batches?.reduce((acc: number, b: any) => acc + (b.current_quantity || 0), 0) || 0;
+                  const totalStock = prod.product_batches?.reduce((acc: number, b: any) => acc + (b.stock_qty || 0), 0) || 0;
                   return (
                     <tr key={prod.id} className="hover:bg-slate-50/50">
                       <td className="p-4 font-bold text-slate-900">{prod.product_name}</td>
                       <td className="p-4 text-slate-600">{prod.brand || 'N/A'}</td>
-                      <td className="p-4 text-slate-600">{prod.pack_size} units</td>
-                      <td className="p-4 text-slate-600">{prod.gst_percentage}%</td>
+                      <td className="p-4 text-slate-600">{prod.pack_size}</td>
+                      <td className="p-4 text-slate-600">{prod.gst_rate}%</td>
                       <td className="p-4">
                         <div className="space-y-1">
                           {prod.product_batches?.map((batch: any) => (
                             <div key={batch.id} className="text-xs bg-slate-100 px-2 py-1 rounded flex items-center justify-between gap-4">
                               <span className="font-semibold text-slate-800">Batch: {batch.batch_number}</span>
                               <span className="text-slate-600">Exp: {batch.expiry_date}</span>
-                              <span className="font-bold text-amber-800">Qty: {batch.current_quantity}</span>
+                              <span className="font-bold text-amber-800">Qty: {batch.stock_qty}</span>
                               <span className="text-slate-900">MRP: ₹{batch.mrp}</span>
                             </div>
                           ))}
@@ -223,7 +215,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Add Product Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
@@ -257,10 +248,11 @@ export default function InventoryPage() {
                 <div>
                   <label className="block text-xs font-medium text-slate-700">Pack Size</label>
                   <input
-                    type="number"
+                    type="text"
                     required
                     value={newProduct.pack_size}
-                    onChange={(e) => setNewProduct({ ...newProduct, pack_size: Number(e.target.value) })}
+                    onChange={(e) => setNewProduct({ ...newProduct, pack_size: e.target.value })}
+                    placeholder="15s"
                     className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
                   />
                 </div>
@@ -269,8 +261,8 @@ export default function InventoryPage() {
                   <input
                     type="number"
                     required
-                    value={newProduct.gst_percentage}
-                    onChange={(e) => setNewProduct({ ...newProduct, gst_percentage: Number(e.target.value) })}
+                    value={newProduct.gst_rate}
+                    onChange={(e) => setNewProduct({ ...newProduct, gst_rate: Number(e.target.value) })}
                     className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
                   />
                 </div>
@@ -289,11 +281,10 @@ export default function InventoryPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-700">Expiry Date (YYYY-MM)</label>
+                  <label className="block text-xs font-medium text-slate-700">Expiry Date (YYYY-MM-DD)</label>
                   <input
-                    type="text"
+                    type="date"
                     required
-                    placeholder="2028-12"
                     value={newProduct.expiry_date}
                     onChange={(e) => setNewProduct({ ...newProduct, expiry_date: e.target.value })}
                     className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
@@ -304,8 +295,8 @@ export default function InventoryPage() {
                   <input
                     type="number"
                     required
-                    value={newProduct.current_quantity}
-                    onChange={(e) => setNewProduct({ ...newProduct, current_quantity: Number(e.target.value) })}
+                    value={newProduct.stock_qty}
+                    onChange={(e) => setNewProduct({ ...newProduct, stock_qty: Number(e.target.value) })}
                     className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
                   />
                 </div>
@@ -357,7 +348,7 @@ export default function InventoryPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold rounded-xl text-sm shadow"
+                  className="px-5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-sm shadow"
                 >
                   Save Product & Batch
                 </button>
