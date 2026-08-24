@@ -2,10 +2,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { ShoppingCart, Package, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle, Banknote, Smartphone, CreditCard, Sparkles, Calculator } from 'lucide-react';
+import { ShoppingCart, Package, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle, Banknote, Smartphone, CreditCard, Sparkles, History, ArrowDownLeft, ArrowUpRight as ArrowUpRed } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [metrics, setMetrics] = useState({
     todaySales: 0,
     invoiceCount: 0,
@@ -17,17 +18,16 @@ export default function DashboardPage() {
     cardTotal: 0,
   });
 
-  // End-of-day Counter Cash Tally State
-  const [actualCounterCash, setActualCounterCash] = useState<number | string>('');
+  const [cashLedger, setCashLedger] = useState<any[]>([]);
 
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    fetchDashboardData(selectedDate);
+  }, [selectedDate]);
 
-  async function fetchDashboardData() {
+  async function fetchDashboardData(dateStr: string) {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -37,24 +37,28 @@ export default function DashboardPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      
-      // Fetch today's sales
+      // Fetch sales for the selected date
+      const startDateTime = `${dateStr}T00:00:00`;
+      const endDateTime = `${dateStr}T23:59:59`;
+
       const { data: salesData } = await supabase
         .from('sales')
-        .select('id, final_amount, payment_status')
+        .select('id, invoice_number, final_amount, payment_status, created_at, customers(customer_name, phone)')
         .eq('organization_id', orgId)
-        .gte('created_at', `${todayStr}T00:00:00`);
+        .gte('created_at', startDateTime)
+        .lte('created_at', endDateTime)
+        .order('created_at', { ascending: false });
 
       const validSales = salesData?.filter(s => s.payment_status !== 'Cancelled') || [];
       const todaySales = validSales.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0);
       const invoiceCount = validSales.length;
 
-      // Fetch payment breakdown for today's sales
+      // Fetch payment breakdowns
       const saleIds = salesData?.map(s => s.id) || [];
       let cashTotal = 0;
       let upiTotal = 0;
       let cardTotal = 0;
+      const ledgerEvents: any[] = [];
 
       if (saleIds.length > 0) {
         const { data: paymentsData } = await supabase
@@ -62,24 +66,67 @@ export default function DashboardPage() {
           .select('sale_id, payment_mode, amount')
           .in('sale_id', saleIds);
 
-        // Map sales status to easily check if an invoice was cancelled/fully returned
-        const saleStatusMap = new Map();
-        salesData?.forEach(s => saleStatusMap.set(s.id, s.payment_status));
+        const saleMap = new Map();
+        salesData?.forEach(s => saleMap.set(s.id, s));
 
         paymentsData?.forEach(p => {
-          const status = saleStatusMap.get(p.sale_id);
+          const sale = saleMap.get(p.sale_id);
+          const status = sale?.payment_status;
           const amt = Number(p.amount || 0);
 
-          if (status !== 'Cancelled' && status !== 'Fully Returned') {
-            if (p.payment_mode === 'cash') cashTotal += amt;
+          if (status === 'Cancelled' || status === 'Fully Returned') {
+            if (p.payment_mode === 'cash') {
+              cashTotal -= amt;
+              ledgerEvents.push({
+                id: `${p.sale_id}-refund`,
+                time: new Date(sale.created_at).toLocaleTimeString(),
+                invoice: sale.invoice_number,
+                type: 'Cash Refund / Payout',
+                amount: -amt,
+                customer: sale.customers?.customer_name || 'Walk-in',
+                status: status
+              });
+            }
+          } else {
+            if (p.payment_mode === 'cash') {
+              cashTotal += amt;
+              ledgerEvents.push({
+                id: `${p.sale_id}-cash`,
+                time: new Date(sale.created_at).toLocaleTimeString(),
+                invoice: sale.invoice_number,
+                type: 'Cash Sale Collected',
+                amount: amt,
+                customer: sale.customers?.customer_name || 'Walk-in',
+                status: 'Completed'
+              });
+            }
             if (p.payment_mode === 'upi') upiTotal += amt;
             if (p.payment_mode === 'card') cardTotal += amt;
           }
         });
 
-        // Final Net Cash = Collected Cash minus Cash Payout Refunds (Allowed to go negative)
-        cashTotal = cashTotal - cashRefundsTracker(salesData || [], paymentsData || []);
+        // Also catch cancelled sales that might not have a separate payment row
+        salesData?.forEach(s => {
+          if (s.payment_status === 'Cancelled') {
+            const hasCashPay = paymentsData?.some(p => p.sale_id === s.id && p.payment_mode === 'cash');
+            if (!hasCashPay) {
+              const refundAmt = Number(s.final_amount || 0);
+              cashTotal -= refundAmt;
+              ledgerEvents.push({
+                id: `${s.id}-cancel`,
+                time: new Date(s.created_at).toLocaleTimeString(),
+                invoice: s.invoice_number,
+                type: 'Cancelled Invoice Payout',
+                amount: -refundAmt,
+                customer: s.customers?.customer_name || 'Walk-in',
+                status: 'Cancelled'
+              });
+            }
+          }
+        });
       }
+
+      setCashLedger(ledgerEvents);
 
       // Fetch product catalog count
       const { count: prodCount } = await supabase
@@ -110,27 +157,6 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
-  // Helper to calculate total cash payouts made for returned/cancelled invoices today
-  function cashRefundsTracker(sales: any[], payments: any[]) {
-    let refundSum = 0;
-    sales.forEach(s => {
-      if (s.payment_status === 'Cancelled' || s.payment_status === 'Fully Returned') {
-        const matchingPayment = payments.find(p => p.sale_id === s.id && p.payment_mode === 'cash');
-        if (matchingPayment) {
-          refundSum += Number(matchingPayment.amount || 0);
-        } else {
-          refundSum += Number(s.final_amount || 0);
-        }
-      }
-    });
-    return refundSum;
-  }
-
-  const currentDate = new Date().toLocaleDateString('en-GB');
-  const expectedNetCash = metrics.cashTotal;
-  const actualCashNum = Number(actualCounterCash) || 0;
-  const cashDiscrepancy = actualCounterCash !== '' ? actualCashNum - expectedNetCash : 0;
-
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-8 animate-fade-in bg-hero-gradient min-h-screen">
       {/* Top Header Banner */}
@@ -142,11 +168,17 @@ export default function DashboardPage() {
               <Sparkles className="w-3 h-3" /> Active Tenant
             </span>
           </div>
-          <p className="text-xs text-slate-500 font-medium mt-1">Track sales performance, returns, and cash drawer tallies in real-time.</p>
+          <p className="text-xs text-slate-500 font-medium mt-1">Track sales performance, cash flow ledgers, and inventory health in real-time.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-slate-50 px-3.5 py-2 rounded-2xl border border-slate-200 text-xs font-bold text-slate-700">
-            <Calendar className="w-4 h-4 text-amber-500" /> Sales Date: {currentDate}
+            <Calendar className="w-4 h-4 text-amber-500" /> Sales Date:
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="bg-transparent font-black text-slate-950 focus:outline-none cursor-pointer"
+            />
           </div>
           <button
             onClick={() => router.push('/dashboard/pos')}
@@ -161,7 +193,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-2 hover:shadow-md transition">
           <div className="flex justify-between items-center text-slate-500 text-xs font-bold uppercase tracking-wider">
-            <span>Today's Net Sales</span>
+            <span>Selected Date Net Sales</span>
             <ArrowUpRight className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-3xl font-black text-slate-950">
@@ -179,13 +211,19 @@ export default function DashboardPage() {
           <div className="text-xs text-slate-400 font-medium">Active SKUs in inventory</div>
         </div>
 
-        <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-2 hover:shadow-md transition">
+        {/* Clickable Low-Stock Alert Card taking user directly to inventory */}
+        <div 
+          onClick={() => router.push('/dashboard/inventory')}
+          className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-2 hover:shadow-md transition cursor-pointer group"
+        >
           <div className="flex justify-between items-center text-slate-500 text-xs font-bold uppercase tracking-wider">
             <span>Low-Stock Alerts</span>
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <AlertTriangle className="w-4 h-4 text-amber-500 group-hover:scale-110 transition" />
           </div>
           <div className="text-3xl font-black text-slate-950">{metrics.lowStock}</div>
-          <div className="text-xs text-amber-600 font-bold">Requires reordering</div>
+          <div className="text-xs text-amber-600 font-bold flex items-center gap-1">
+            Requires reordering <ArrowUpRight className="w-3 h-3" />
+          </div>
         </div>
 
         <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-2 hover:shadow-md transition">
@@ -200,7 +238,7 @@ export default function DashboardPage() {
 
       {/* Payment Mode Breakdown Card */}
       <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Today's Revenue by Payment Mode (Net of Cash Refunds)</h3>
+        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Revenue Breakdown by Payment Mode (Net of Cash Refunds)</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex items-center justify-between">
             <div className="flex items-center gap-3.5">
@@ -236,46 +274,51 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* End-of-Day Cash Drawer Tally Report */}
+      {/* Cash Flow Ledger Stream */}
       <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-amber-500" /> End-of-Day Cash Drawer & Counter Tally Report
+            <History className="w-4 h-4 text-amber-500" /> Cash Movement Ledger (Sales, Refunds & Cancellations)
           </h3>
-          <span className="text-xs text-slate-400 font-semibold">Tally expected vs actual drawer cash</span>
+          <span className="text-xs text-slate-400 font-semibold">Real-time cash drawer impact log</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
-            <span className="text-xs text-slate-500 font-bold block">System Expected Cash (Drawer)</span>
-            <strong className={`text-xl font-black ${expectedNetCash < 0 ? 'text-red-600' : 'text-slate-950'}`}>
-              ₹{expectedNetCash.toFixed(2)}
-            </strong>
-            <span className="text-[10px] text-slate-400 block font-medium">Net cash adjusted for returns & cancellations</span>
+        {cashLedger.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs font-medium bg-slate-50 rounded-2xl border border-slate-200">
+            No cash transactions or refunds recorded for this date.
           </div>
-
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
-            <span className="text-xs text-slate-500 font-bold block">Actual Physical Counter Cash</span>
-            <input
-              type="number"
-              placeholder="Enter drawer cash..."
-              value={actualCounterCash}
-              onChange={(e) => setActualCounterCash(e.target.value)}
-              className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-black text-base text-slate-950 focus:ring-2 focus:ring-amber-400 focus:outline-none"
-            />
-            <span className="text-[10px] text-slate-400 block font-medium">Counted manually from cash box</span>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 uppercase text-slate-500 border-b border-slate-200 font-bold">
+                <tr>
+                  <th className="p-3">Time</th>
+                  <th className="p-3">Invoice / Ref</th>
+                  <th className="p-3">Transaction Type</th>
+                  <th className="p-3">Customer</th>
+                  <th className="p-3 text-right">Cash Impact (₹)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {cashLedger.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/50">
+                    <td className="p-3 text-slate-500 font-mono">{item.time}</td>
+                    <td className="p-3 font-bold text-slate-950 font-mono">{item.invoice}</td>
+                    <td className="p-3">
+                      <span className={`px-2.5 py-1 rounded-lg font-bold text-[10px] ${item.amount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                        {item.type}
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-800 font-semibold">{item.customer}</td>
+                    <td className={`p-3 text-right font-black text-sm font-mono ${item.amount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {item.amount > 0 ? `+₹${item.amount.toFixed(2)}` : `-₹${Math.abs(item.amount).toFixed(2)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          <div className={`p-4 rounded-2xl border flex flex-col justify-between ${actualCounterCash === '' ? 'bg-slate-50 border-slate-200' : cashDiscrepancy === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
-            <span className="text-xs font-bold block">Cash Tally Variance / Difference</span>
-            <strong className="text-xl font-black">
-              {actualCounterCash === '' ? '—' : `₹${cashDiscrepancy >= 0 ? '+' : ''}${cashDiscrepancy.toFixed(2)}`}
-            </strong>
-            <span className="text-[10px] font-semibold">
-              {actualCounterCash === '' ? 'Enter drawer count above' : cashDiscrepancy === 0 ? 'Perfect! Drawer balanced 100%' : cashDiscrepancy > 0 ? 'Surplus cash in counter drawer' : 'Shortage in counter drawer'}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Quick Operational Shortcuts */}
