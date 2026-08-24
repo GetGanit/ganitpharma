@@ -8,12 +8,7 @@ import {
   Search, 
   Trash2, 
   CheckCircle2, 
-  CreditCard,
-  Banknote,
-  Smartphone,
-  AlertCircle,
-  BookmarkPlus,
-  RotateCcw
+  AlertCircle
 } from 'lucide-react';
 
 interface CartItem {
@@ -40,10 +35,14 @@ export default function POSPage() {
   const [customerDOB, setCustomerDOB] = useState('');
   const [doctorName, setDoctorName] = useState('15-OTHERS');
   const [salesOrigin, setSalesOrigin] = useState('Regular sales');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
   const [overallDiscount, setOverallDiscount] = useState<number>(0);
 
-  // Parked Transactions State
+  // Active Split Payment Inputs
+  const [splitCash, setSplitCash] = useState<number | string>(0);
+  const [splitUpi, setSplitUpi] = useState<number | string>(0);
+  const [splitCard, setSplitCard] = useState<number | string>(0);
+
+  // Parked Transactions
   const [parkedTransactions, setParkedTransactions] = useState<any[]>([]);
   const [showParkedModal, setShowParkedModal] = useState(false);
 
@@ -93,7 +92,6 @@ export default function POSPage() {
 
         if (data) {
           setCustomerName(data.customer_name || '');
-          if (data.dob) setCustomerDOB(data.dob);
         }
       }
     }
@@ -217,6 +215,9 @@ export default function POSPage() {
       setCustomerName('');
       setCustomerDOB('');
       setOverallDiscount(0);
+      setSplitCash(0);
+      setSplitUpi(0);
+      setSplitCard(0);
     }
   };
 
@@ -279,7 +280,6 @@ export default function POSPage() {
     const gross = perUnitPrice * qtyNum;
     const disc = gross * ((item.discount_percent || 0) / 100);
     let netItemTotal = gross - disc;
-    // factor in overall bill discount apportionment
     if (rawSubtotal > 0) {
       netItemTotal -= netItemTotal * (overallDiscount / 100);
     }
@@ -287,9 +287,15 @@ export default function POSPage() {
   }, 0);
 
   const finalTotal = subtotal;
+  const totalPaidSplit = (Number(splitCash) || 0) + (Number(splitUpi) || 0) + (Number(splitCard) || 0);
 
   const handleCompleteSale = async () => {
     if (cart.length === 0) return;
+    if (Math.abs(totalPaidSplit - finalTotal) > 1) {
+      alert(`Split payment total (₹${totalPaidSplit}) must match Final Payable (₹${finalTotal.toFixed(2)})!`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccessMsg(null);
@@ -321,7 +327,7 @@ export default function POSPage() {
       } else {
         const { data: newCust } = await supabase
           .from('customers')
-          .insert([{ organization_id: orgId, customer_name: customerName || 'Retail Customer', phone: customerPhone, dob: customerDOB || null }])
+          .insert([{ organization_id: orgId, customer_name: customerName || 'Retail Customer', phone: customerPhone }])
           .select('id')
           .single();
         if (newCust) customerId = newCust.id;
@@ -387,12 +393,16 @@ export default function POSPage() {
       }
     }
 
-    await supabase.from('payments').insert([{
-      sale_id: saleData.id,
-      organization_id: orgId,
-      payment_mode: paymentMethod,
-      amount: finalTotal
-    }]);
+    // Insert split payments record
+    if (Number(splitCash) > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'cash', amount: Number(splitCash) }]);
+    }
+    if (Number(splitUpi) > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'upi', amount: Number(splitUpi) }]);
+    }
+    if (Number(splitCard) > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'card', amount: Number(splitCard) }]);
+    }
 
     setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
     setCart([]);
@@ -400,15 +410,16 @@ export default function POSPage() {
     setCustomerName('');
     setCustomerDOB('');
     setOverallDiscount(0);
+    setSplitCash(0);
+    setSplitUpi(0);
+    setSplitCard(0);
     setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* Persistent Animated Sidebar */}
       <Sidebar />
 
-      {/* Main POS Interface */}
       <div className="flex-1 flex flex-col min-w-0">
         
         {/* Top Metadata Panel */}
@@ -666,7 +677,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Right Action Keypad */}
+          {/* Right Action Keypad & Active Split Payment Inputs */}
           <div className="flex flex-col space-y-3">
             <div className="bg-slate-900 text-white p-2 rounded-xl text-center font-bold text-xs">
               POS Quick Actions
@@ -703,29 +714,45 @@ export default function POSPage() {
               </button>
             </div>
 
-            <div className="pt-2">
-              <div className="text-slate-500 font-bold text-xs uppercase mb-2">Payment Mode (Split Active)</div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setPaymentMethod('cash')}
-                  className={`p-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'cash' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'bg-white border-slate-300 text-slate-700'}`}
-                >
-                  <Banknote className="w-4 h-4" /> Cash
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('upi')}
-                  className={`p-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'upi' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'bg-white border-slate-300 text-slate-700'}`}
-                >
-                  <Smartphone className="w-4 h-4" /> UPI
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'card' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'bg-white border-slate-300 text-slate-700'}`}
-                >
-                  <CreditCard className="w-4 h-4" /> Card
-                </button>
+            {/* Active Split Payment Inputs Box */}
+            <div className="bg-white p-3 rounded-2xl border border-slate-300 space-y-2 shadow-sm">
+              <div className="flex justify-between items-center text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5">
+                <span>Split Payment Active</span>
+                <span className={`text-[10px] ${Math.abs(totalPaidSplit - finalTotal) <= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                  Paid: ₹{totalPaidSplit} / ₹{finalTotal.toFixed(0)}
+                </span>
+              </div>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Cash:</span>
+                  <input
+                    type="number"
+                    value={splitCash}
+                    onChange={(e) => setSplitCash(e.target.value)}
+                    className="w-24 px-2 py-1 border border-slate-300 rounded font-bold text-right"
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">UPI:</span>
+                  <input
+                    type="number"
+                    value={splitUpi}
+                    onChange={(e) => setSplitUpi(e.target.value)}
+                    className="w-24 px-2 py-1 border border-slate-300 rounded font-bold text-right"
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Card:</span>
+                  <input
+                    type="number"
+                    value={splitCard}
+                    onChange={(e) => setSplitCard(e.target.value)}
+                    className="w-24 px-2 py-1 border border-slate-300 rounded font-bold text-right"
+                  />
+                </div>
               </div>
             </div>
+
           </div>
 
         </div>
