@@ -452,14 +452,14 @@ export default function POSPage() {
 
     const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
+    // FIXED: Removed discount_total from table insert to prevent schema cache errors
     const { data: saleData, error: saleError } = await supabase
       .from('sales')
       .insert([{
         organization_id: orgId,
         invoice_number: invoiceNumber,
         customer_id: customerId,
-        subtotal: rawSubtotal,
-        discount_total: totalDiscountAmount,
+        subtotal: subtotal,
         gst_total: totalGST,
         final_amount: finalTotal,
         payment_status: 'Paid'
@@ -1335,12 +1335,6 @@ export default function POSPage() {
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
-                {Number(selectedInvoice.discount_total || 0) > 0 && (
-                  <div className="flex justify-between text-red-600 font-bold">
-                    <span>Overall Bill Discount:</span>
-                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
