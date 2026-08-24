@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import Sidebar from '@/components/Sidebar';
 import { 
   Receipt, 
   Search, 
@@ -11,16 +12,8 @@ import {
   Banknote,
   Smartphone,
   AlertCircle,
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Truck,
-  FileText,
-  Users,
-  BarChart3,
-  ShieldCheck,
-  Settings,
-  Percent
+  BookmarkPlus,
+  RotateCcw
 } from 'lucide-react';
 
 interface CartItem {
@@ -30,7 +23,7 @@ interface CartItem {
   selling_price: number;
   mrp: number;
   gst_percentage: number;
-  quantity: number | string; // allows smooth typing of multi-digit numbers
+  quantity: number | string;
   pack_size: number;
   available_qty: number;
   discount_percent: number;
@@ -41,14 +34,19 @@ export default function POSPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // Patient & Transaction Metadata
+  // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerDOB, setCustomerDOB] = useState('');
   const [doctorName, setDoctorName] = useState('15-OTHERS');
   const [salesOrigin, setSalesOrigin] = useState('Regular sales');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
-  
+  const [overallDiscount, setOverallDiscount] = useState<number>(0);
+
+  // Parked Transactions State
+  const [parkedTransactions, setParkedTransactions] = useState<any[]>([]);
+  const [showParkedModal, setShowParkedModal] = useState(false);
+
   // Modals
   const [showJournalsModal, setShowJournalsModal] = useState(false);
   const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
@@ -63,7 +61,6 @@ export default function POSPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -104,7 +101,7 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [customerPhone, supabase]);
 
-  // Product Search
+  // Search Products
   useEffect(() => {
     async function searchProducts() {
       if (!searchQuery.trim()) {
@@ -193,7 +190,7 @@ export default function POSPage() {
 
   const handleQuantityChange = (index: number, val: string) => {
     const updated = [...cart];
-    updated[index].quantity = val; // allows typing '2', then '5' freely without jumping
+    updated[index].quantity = val;
     setCart(updated);
   };
 
@@ -213,7 +210,47 @@ export default function POSPage() {
     setCart(cart.filter((_, i) => i !== index));
   };
 
-  // Apply item manual discount
+  const clearAllCart = () => {
+    if (confirm('Are you sure you want to clear the current billing cart?')) {
+      setCart([]);
+      setCustomerPhone('');
+      setCustomerName('');
+      setCustomerDOB('');
+      setOverallDiscount(0);
+    }
+  };
+
+  const parkTransaction = () => {
+    if (cart.length === 0) {
+      alert('Cart is empty. Nothing to park.');
+      return;
+    }
+    const parkedObj = {
+      id: Date.now(),
+      time: new Date().toLocaleTimeString(),
+      customerPhone,
+      customerName,
+      cart,
+      overallDiscount
+    };
+    setParkedTransactions([...parkedTransactions, parkedObj]);
+    setCart([]);
+    setCustomerPhone('');
+    setCustomerName('');
+    setCustomerDOB('');
+    setOverallDiscount(0);
+    alert('Transaction successfully parked!');
+  };
+
+  const resumeParkedTransaction = (parked: any) => {
+    setCart(parked.cart);
+    setCustomerPhone(parked.customerPhone || '');
+    setCustomerName(parked.customerName || '');
+    setOverallDiscount(parked.overallDiscount || 0);
+    setParkedTransactions(parkedTransactions.filter(p => p.id !== parked.id));
+    setShowParkedModal(false);
+  };
+
   const applyItemDiscount = () => {
     if (discountModalIndex !== null) {
       const updated = [...cart];
@@ -224,8 +261,8 @@ export default function POSPage() {
     }
   };
 
-  // Financial Calculations & Unit Breakdown
-  const subtotal = cart.reduce((acc, item) => {
+  // Financial Calculations
+  const rawSubtotal = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
     const gross = perUnitPrice * qtyNum;
@@ -233,12 +270,19 @@ export default function POSPage() {
     return acc + (gross - disc);
   }, 0);
 
+  const overallDiscVal = rawSubtotal * (overallDiscount / 100);
+  const subtotal = rawSubtotal - overallDiscVal;
+
   const totalGST = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
     const gross = perUnitPrice * qtyNum;
     const disc = gross * ((item.discount_percent || 0) / 100);
-    const netItemTotal = gross - disc;
+    let netItemTotal = gross - disc;
+    // factor in overall bill discount apportionment
+    if (rawSubtotal > 0) {
+      netItemTotal -= netItemTotal * (overallDiscount / 100);
+    }
     return acc + (netItemTotal * item.gst_percentage) / (100 + item.gst_percentage);
   }, 0);
 
@@ -311,7 +355,10 @@ export default function POSPage() {
       const perUnitPrice = item.selling_price / item.pack_size;
       const gross = perUnitPrice * qtyNum;
       const disc = gross * ((item.discount_percent || 0) / 100);
-      const itemFinalTotal = gross - disc;
+      let itemFinalTotal = gross - disc;
+      if (rawSubtotal > 0) {
+        itemFinalTotal -= itemFinalTotal * (overallDiscount / 100);
+      }
       
       const { data: batchData } = await supabase
         .from('product_batches')
@@ -352,48 +399,14 @@ export default function POSPage() {
     setCustomerPhone('');
     setCustomerName('');
     setCustomerDOB('');
+    setOverallDiscount(0);
     setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* Persistent Sidebar */}
-      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 shrink-0 hidden md:flex">
-        <div>
-          <div className="h-16 px-6 flex items-center border-b border-slate-800">
-            <span className="text-lg font-bold text-white">Ganit<span className="text-amber-400">Pharma</span></span>
-          </div>
-          <nav className="p-4 space-y-1 text-sm font-medium">
-            <a href="/dashboard" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <LayoutDashboard className="w-5 h-5" /> Dashboard
-            </a>
-            <a href="/dashboard/pos" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-400/10 text-amber-400 font-bold">
-              <ShoppingCart className="w-5 h-5" /> Billing / POS
-            </a>
-            <a href="/dashboard/inventory" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <Package className="w-5 h-5" /> Inventory
-            </a>
-            <a href="/dashboard/purchases" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <Truck className="w-5 h-5" /> Purchases
-            </a>
-            <a href="/dashboard/invoices" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <FileText className="w-5 h-5" /> Invoices
-            </a>
-            <a href="/dashboard/crm" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <Users className="w-5 h-5" /> Customers
-            </a>
-            <a href="/dashboard/reports" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <BarChart3 className="w-5 h-5" /> Reports
-            </a>
-            <a href="/dashboard/compliance" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <ShieldCheck className="w-5 h-5" /> Compliance
-            </a>
-            <a href="/dashboard/settings" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
-              <Settings className="w-5 h-5" /> Settings
-            </a>
-          </nav>
-        </div>
-      </aside>
+      {/* Persistent Animated Sidebar */}
+      <Sidebar />
 
       {/* Main POS Interface */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -531,7 +544,12 @@ export default function POSPage() {
             <div className="bg-white rounded-xl border border-slate-300 shadow-sm flex-1 flex flex-col overflow-hidden">
               <div className="p-3 bg-slate-100 border-b border-slate-300 font-bold text-slate-900 text-xs flex justify-between items-center">
                 <span>Billing Items ({cart.length})</span>
-                <span className="text-slate-500">Auto Full/Loose Calculator Active</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={clearAllCart} className="bg-red-100 hover:bg-red-200 text-red-700 px-2.5 py-1 rounded text-xs font-bold transition">
+                    Clear All (F3)
+                  </button>
+                  <span className="text-slate-500">Auto Full/Loose Calculator Active</span>
+                </div>
               </div>
               
               <div className="flex-1 overflow-y-auto p-2">
@@ -612,10 +630,21 @@ export default function POSPage() {
             </div>
 
             {/* Bottom Financial Bar */}
-            <div className="bg-white p-3 rounded-xl border border-slate-300 grid grid-cols-4 gap-3 text-xs shadow-sm">
+            <div className="bg-white p-3 rounded-xl border border-slate-300 grid grid-cols-5 gap-3 text-xs shadow-sm items-center">
               <div>
                 <span className="text-slate-500 block">Subtotal</span>
                 <strong className="text-sm text-slate-900">₹{subtotal.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Overall Bill Disc %</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={overallDiscount}
+                  onChange={(e) => setOverallDiscount(Number(e.target.value))}
+                  className="w-16 px-2 py-1 border border-slate-300 rounded font-bold text-slate-900 mt-0.5"
+                />
               </div>
               <div>
                 <span className="text-slate-500 block">Included GST</span>
@@ -629,7 +658,7 @@ export default function POSPage() {
                 <button
                   onClick={handleCompleteSale}
                   disabled={loading || cart.length === 0}
-                  className="w-full h-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-lg shadow transition flex items-center justify-center gap-1 disabled:opacity-50 text-xs"
+                  className="w-full h-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold py-2.5 rounded-lg shadow transition flex items-center justify-center gap-1 disabled:opacity-50 text-xs"
                 >
                   <CheckCircle2 className="w-4 h-4" /> {loading ? 'Processing...' : 'Complete Sale'}
                 </button>
@@ -644,14 +673,14 @@ export default function POSPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => alert('Change Quantity shortcut active.')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
-                <span className="block text-[10px] text-amber-400 font-bold">Alt + F1</span> Change Qty
+              <button onClick={parkTransaction} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
+                <span className="block text-[10px] text-amber-400 font-bold">Alt + F4</span> Park Txn
+              </button>
+              <button onClick={() => setShowParkedModal(true)} className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 p-3 rounded-xl text-xs font-semibold text-center border border-amber-500/30 relative">
+                <span className="block text-[10px] text-amber-400 font-bold">Parked List</span> View ({parkedTransactions.length})
               </button>
               <button onClick={fetchJournals} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
                 <span className="block text-[10px] text-amber-400 font-bold">F1</span> Show Journals
-              </button>
-              <button onClick={() => alert('Park Transaction activated.')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
-                <span className="block text-[10px] text-amber-400 font-bold">Alt + F4</span> Park Txn
               </button>
               <button onClick={() => router.push('/dashboard/inventory')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
                 <span className="block text-[10px] text-amber-400 font-bold">Alt + F2</span> Inventory Check
@@ -675,7 +704,7 @@ export default function POSPage() {
             </div>
 
             <div className="pt-2">
-              <div className="text-slate-500 font-bold text-xs uppercase mb-2">Payment Mode</div>
+              <div className="text-slate-500 font-bold text-xs uppercase mb-2">Payment Mode (Split Active)</div>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setPaymentMethod('cash')}
@@ -701,6 +730,38 @@ export default function POSPage() {
 
         </div>
       </div>
+
+      {/* Parked Transactions Modal */}
+      {showParkedModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900">Parked Transactions ({parkedTransactions.length})</h3>
+              <button onClick={() => setShowParkedModal(false)} className="text-slate-500 hover:text-slate-900 font-bold">✕</button>
+            </div>
+            {parkedTransactions.length === 0 ? (
+              <p className="text-center py-8 text-slate-400 text-sm">No parked transactions found.</p>
+            ) : (
+              <div className="space-y-3 max-h-80 overflow-y-auto">
+                {parkedTransactions.map((pt) => (
+                  <div key={pt.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                    <div>
+                      <strong className="text-slate-900 text-sm block">Customer: {pt.customerPhone || 'Walk-in'}</strong>
+                      <span className="text-slate-500">Parked at {pt.time} • {pt.cart.length} items</span>
+                    </div>
+                    <button
+                      onClick={() => resumeParkedTransaction(pt)}
+                      className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-lg shadow text-xs"
+                    >
+                      Resume Bill
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Manual Discount Modal */}
       {discountModalIndex !== null && (
