@@ -2,10 +2,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Settings, Shield, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [loading, setLoading] = useState(true);
   const [success, setSuccess] = useState(false);
   const [profile, setProfile] = useState({
     tradingName: 'Ganit Pharmacy',
@@ -35,22 +34,17 @@ export default function SettingsPage() {
       if (orgId) {
         const { data } = await supabase.from('organizations').select('*').eq('id', orgId).single();
         if (data) {
-          setProfile({
-            tradingName: data.name || '',
-            legalName: data.owner_name || '',
-            gstin: data.gstin || '',
-            drugLicence: 'MH-MUM-20B-4412',
-            phone: data.phone || '',
-            email: data.email || '',
-            address: data.address || '',
-            invoicePrefix: 'INV',
-            lowStockThreshold: 10,
-            expiryAlertDays: 90,
-            receiptFormat: 'a5',
-          });
+          setProfile(prev => ({
+            ...prev,
+            tradingName: data.name || prev.tradingName,
+            legalName: data.owner_name || prev.legalName,
+            gstin: data.gstin || prev.gstin,
+            phone: data.phone || prev.phone,
+            email: data.email || prev.email,
+            address: data.address || prev.address,
+          }));
         }
       }
-      setLoading(false);
     }
     fetchOrg();
   }, [router, supabase]);
