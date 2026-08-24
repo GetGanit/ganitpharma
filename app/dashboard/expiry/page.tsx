@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { AlertTriangle, Calendar, ArrowLeft, PackageX, ShieldAlert } from 'lucide-react';
+import { Calendar, ArrowLeft, PackageX, ShieldAlert } from 'lucide-react';
 
 export default function ExpiryPage() {
   const [loading, setLoading] = useState(true);
@@ -22,22 +22,17 @@ export default function ExpiryPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       // Fetch batches for tenant
       const { data, error } = await supabase
         .from('product_batches')
         .select('*, products(product_name, brand, pack_size)')
-        .eq('organization_id', profile.organization_id)
-        .gt('current_quantity', 0);
+        .eq('organization_id', orgId)
+        .gt('stock_qty', 0);
 
       if (!error && data) {
-        // Filter or highlight batches nearing expiry
         setNearExpiryBatches(data);
       }
     }
@@ -101,7 +96,7 @@ export default function ExpiryPage() {
                     <td className="p-4 text-slate-700 font-semibold flex items-center gap-1.5">
                       <Calendar className="w-4 h-4 text-slate-400" /> {batch.expiry_date}
                     </td>
-                    <td className="p-4 font-extrabold text-slate-900">{batch.current_quantity} units</td>
+                    <td className="p-4 font-extrabold text-slate-900">{batch.stock_qty} units</td>
                     <td className="p-4">
                       <span className="text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full font-bold">
                         Safe
