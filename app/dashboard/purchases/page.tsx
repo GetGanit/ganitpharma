@@ -7,10 +7,7 @@ import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft } fr
 export default function PurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [purchases, setPurchases] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([
-    { id: '1', name: 'MedPlus Distributors', phone: '+91 90000 11111', gstin: '29AACM1234B1ZA' },
-    { id: '2', name: 'Sri Balaji Pharma', phone: '+91 90000 22222', gstin: '29AAACS9876C1ZB' }
-  ]);
+  const [vendors, setVendors] = useState<any[]>([]);
   
   // View mode: 'list' | 'import' | 'new_po'
   const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po'>('list');
@@ -24,7 +21,7 @@ export default function PurchasesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New PO State
-  const [poVendor, setPoVendor] = useState('MedPlus Distributors');
+  const [poVendor, setPoVendor] = useState('');
   const [poItemName, setPoItemName] = useState('');
   const [poQty, setPoQty] = useState(50);
   const [poValue, setPoValue] = useState(2500);
@@ -33,10 +30,10 @@ export default function PurchasesPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    fetchPurchases();
+    fetchPurchasesAndVendors();
   }, []);
 
-  async function fetchPurchases() {
+  async function fetchPurchasesAndVendors() {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -46,14 +43,24 @@ export default function PurchasesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      const { data } = await supabase
-        .from('sales') // or purchase table if exists, using mock/sales fallback or purchase orders table
+      // Fetch live purchases or sales/transactions
+      const { data: purchaseData } = await supabase
+        .from('sales')
         .select('*')
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (data) setPurchases(data);
+      if (purchaseData) setPurchases(purchaseData);
+
+      // Fetch real vendors/suppliers if available, or fallback to empty array
+      const { data: vendorData } = await supabase
+        .from('customers') // or suppliers table if configured
+        .select('*')
+        .eq('organization_id', orgId)
+        .limit(5);
+
+      if (vendorData) setVendors(vendorData);
     }
     setLoading(false);
   }
@@ -110,7 +117,6 @@ export default function PurchasesPage() {
     }
 
     try {
-      // Fast bulk processing in batches
       for (const row of parsedData) {
         const { data: prodData } = await supabase
           .from('products')
@@ -204,48 +210,55 @@ export default function PurchasesPage() {
           {/* Purchase Orders Table */}
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
             <h3 className="font-bold text-slate-950 text-sm">Purchase orders</h3>
-            <table className="w-full text-left text-xs">
-              <thead className="text-slate-400 uppercase border-b border-slate-100">
-                <tr>
-                  <th className="pb-3 font-semibold">PO</th>
-                  <th className="pb-3 font-semibold">Vendor</th>
-                  <th className="pb-3 font-semibold">Date</th>
-                  <th className="pb-3 font-semibold">Items</th>
-                  <th className="pb-3 font-semibold">Value</th>
-                  <th className="pb-3 font-semibold text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                <tr className="hover:bg-slate-50">
-                  <td className="py-3 font-mono font-bold text-slate-900">PO-20260823-839</td>
-                  <td className="py-3 text-slate-600">MedPlus Distributors</td>
-                  <td className="py-3 text-slate-600">23 Aug 2026</td>
-                  <td className="py-3 text-slate-600 font-bold">3</td>
-                  <td className="py-3 font-extrabold text-slate-900">₹5,250.00</td>
-                  <td className="py-3 text-right">
-                    <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-bold text-[10px]">
-                      received
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            {loading ? (
+              <div className="text-center py-8 text-slate-400 text-xs">Loading purchases...</div>
+            ) : purchases.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-xs">No purchase orders found in database.</div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="text-slate-400 uppercase border-b border-slate-100">
+                  <tr>
+                    <th className="pb-3 font-semibold">PO / Invoice</th>
+                    <th className="pb-3 font-semibold">Date</th>
+                    <th className="pb-3 font-semibold">Value</th>
+                    <th className="pb-3 font-semibold text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {purchases.map(p => (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="py-3 font-mono font-bold text-slate-900">{p.invoice_number}</td>
+                      <td className="py-3 text-slate-600">{new Date(p.created_at).toLocaleDateString()}</td>
+                      <td className="py-3 font-extrabold text-slate-900">₹{Number(p.final_amount).toFixed(2)}</td>
+                      <td className="py-3 text-right">
+                        <span className="bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold text-[10px]">
+                          {p.payment_status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* Vendors Card */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 h-fit">
-            <h3 className="font-bold text-slate-950 text-sm">Vendors</h3>
-            <div className="space-y-3">
-              {vendors.map(v => (
-                <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
-                  <strong className="text-slate-900 text-xs block">{v.name}</strong>
-                  <div className="text-[11px] text-slate-500 flex justify-between">
-                    <span>{v.phone}</span>
-                    <span className="font-mono">{v.gstin}</span>
+            <h3 className="font-bold text-slate-950 text-sm">Registered Vendors</h3>
+            {vendors.length === 0 ? (
+              <p className="text-xs text-slate-400">No vendors registered yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {vendors.map(v => (
+                  <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                    <strong className="text-slate-900 text-xs block">{v.customer_name}</strong>
+                    <div className="text-[11px] text-slate-500 flex justify-between">
+                      <span>{v.phone}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
@@ -280,7 +293,7 @@ export default function PurchasesPage() {
           >
             <Truck className="w-6 h-6 text-slate-400" />
             <p className="text-xs font-semibold text-slate-700">
-              {file ? `Selected file: ${file.name}` : 'Click to upload or select distributor bill CSV (e.g. 200 SKUs file)'}
+              {file ? `Selected file: ${file.name}` : 'Click to upload or select distributor bill CSV'}
             </p>
             <button
               type="button"
@@ -342,11 +355,8 @@ export default function PurchasesPage() {
           </div>
           <div className="space-y-4 text-xs">
             <div>
-              <label className="block font-medium text-slate-600 mb-1">Select Vendor</label>
-              <select value={poVendor} onChange={(e) => setPoVendor(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium">
-                <option value="MedPlus Distributors">MedPlus Distributors</option>
-                <option value="Sri Balaji Pharma">Sri Balaji Pharma</option>
-              </select>
+              <label className="block font-medium text-slate-600 mb-1">Vendor Name</label>
+              <input type="text" placeholder="e.g. MedPlus Distributors" value={poVendor} onChange={(e) => setPoVendor(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
             </div>
             <div>
               <label className="block font-medium text-slate-600 mb-1">Item / Medicine Name</label>
