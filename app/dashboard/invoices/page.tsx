@@ -113,7 +113,6 @@ export default function InvoicesPage() {
     if (!returnModalInvoice) return;
 
     let totalRefund = 0;
-    const orgId = returnModalInvoice.organization_id;
 
     for (const item of returnModalInvoice.sale_items) {
       const returnQty = Number(returnQuantities[item.id]) || 0;
@@ -123,11 +122,9 @@ export default function InvoicesPage() {
           return;
         }
 
-        // Calculate prorated refund for returned quantity
         const unitRefund = Number(item.total_price) / Number(item.quantity_sold);
         totalRefund += unitRefund * returnQty;
 
-        // Restore stock to batch
         if (item.batch_id) {
           const { data: batch } = await supabase
             .from('product_batches')
@@ -143,7 +140,6 @@ export default function InvoicesPage() {
           }
         }
 
-        // Update sale item quantity sold
         const newQtySold = Number(item.quantity_sold) - returnQty;
         const newTotalPrice = Number(item.total_price) - (unitRefund * returnQty);
         await supabase
@@ -153,7 +149,6 @@ export default function InvoicesPage() {
       }
     }
 
-    // Update overall invoice final amount
     const newFinalAmount = Math.max(0, Number(returnModalInvoice.final_amount) - totalRefund);
     await supabase
       .from('sales')
@@ -264,7 +259,6 @@ export default function InvoicesPage() {
                       <MessageSquare className="w-3 h-3" /> WhatsApp
                     </button>
 
-                    {/* Return Action Button */}
                     {inv.payment_status !== 'Cancelled' && inv.payment_status !== 'Fully Returned' && (
                       <button
                         onClick={() => openReturnModal(inv)}
@@ -274,7 +268,6 @@ export default function InvoicesPage() {
                       </button>
                     )}
 
-                    {/* Cancel Invoice Action Button */}
                     {inv.payment_status !== 'Cancelled' && inv.payment_status !== 'Fully Returned' && (
                       <button
                         onClick={() => handleCancelInvoice(inv.id)}
@@ -343,7 +336,7 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal */}
+      {/* Tax Invoice Modal with Discount Display */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
@@ -416,6 +409,12 @@ export default function InvoicesPage() {
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
+                {Number(selectedInvoice.discount_total || 0) > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Discount Total:</span>
+                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
