@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { ShoppingCart, Package, Truck, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Package, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle, Banknote, Smartphone, CreditCard } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -12,6 +12,9 @@ export default function DashboardPage() {
     totalItems: 0,
     lowStock: 0,
     pendingPOs: 0,
+    cashTotal: 0,
+    upiTotal: 0,
+    cardTotal: 0,
   });
   const router = useRouter();
   const supabase = createClient();
@@ -35,12 +38,31 @@ export default function DashboardPage() {
       // Fetch today's sales
       const { data: salesData } = await supabase
         .from('sales')
-        .select('final_amount')
+        .select('id, final_amount')
         .eq('organization_id', orgId)
         .gte('created_at', `${todayStr}T00:00:00`);
 
       const todaySales = salesData?.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0) || 0;
       const invoiceCount = salesData?.length || 0;
+
+      // Fetch payment breakdown for today's sales
+      const saleIds = salesData?.map(s => s.id) || [];
+      let cashTotal = 0;
+      let upiTotal = 0;
+      let cardTotal = 0;
+
+      if (saleIds.length > 0) {
+        const { data: paymentsData } = await supabase
+          .from('payments')
+          .select('payment_mode, amount')
+          .in('sale_id', saleIds);
+
+        paymentsData?.forEach(p => {
+          if (p.payment_mode === 'cash') cashTotal += Number(p.amount || 0);
+          if (p.payment_mode === 'upi') upiTotal += Number(p.amount || 0);
+          if (p.payment_mode === 'card') cardTotal += Number(p.amount || 0);
+        });
+      }
 
       // Fetch product catalog count
       const { count: prodCount } = await supabase
@@ -63,6 +85,9 @@ export default function DashboardPage() {
         totalItems: prodCount || 0,
         lowStock,
         pendingPOs: 0,
+        cashTotal,
+        upiTotal,
+        cardTotal,
       });
     }
     setLoading(false);
@@ -132,6 +157,42 @@ export default function DashboardPage() {
           </div>
           <div className="text-3xl font-extrabold text-slate-950">{metrics.pendingPOs}</div>
           <div className="text-xs text-slate-400">Awaiting distributor confirmation</div>
+        </div>
+      </div>
+
+      {/* Payment Mode Breakdown Card */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <h3 className="text-base font-bold text-slate-950">Today's Revenue by Payment Mode</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-100 text-amber-800 rounded-lg"><Banknote className="w-5 h-5" /></div>
+              <div>
+                <span className="text-xs text-slate-500 block font-medium">Cash Collected</span>
+                <strong className="text-lg text-slate-900">₹{metrics.cashTotal.toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-100 text-blue-800 rounded-lg"><Smartphone className="w-5 h-5" /></div>
+              <div>
+                <span className="text-xs text-slate-500 block font-medium">UPI Collected</span>
+                <strong className="text-lg text-slate-900">₹{metrics.upiTotal.toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-purple-100 text-purple-800 rounded-lg"><CreditCard className="w-5 h-5" /></div>
+              <div>
+                <span className="text-xs text-slate-500 block font-medium">Card Collected</span>
+                <strong className="text-lg text-slate-900">₹{metrics.cardTotal.toFixed(2)}</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
