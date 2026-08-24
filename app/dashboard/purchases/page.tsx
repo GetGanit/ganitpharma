@@ -28,26 +28,22 @@ export default function PurchasesPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       // Fetch vendors
       const { data: vendorData } = await supabase
         .from('vendors')
         .select('*')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', orgId);
       
       if (vendorData) setVendors(vendorData);
 
       // Fetch purchase orders
       const { data: poData } = await supabase
         .from('purchase_orders')
-        .select('*, vendors(name)')
-        .eq('organization_id', profile.organization_id);
+        .select('*, vendors(vendor_name)')
+        .eq('organization_id', orgId);
 
       if (poData) setPurchaseOrders(poData);
     }
@@ -59,18 +55,17 @@ export default function PurchasesPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.organization_id) return;
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) return;
 
     const { error } = await supabase.from('vendors').insert([
       {
-        organization_id: profile.organization_id,
-        ...newVendor,
+        organization_id: orgId,
+        vendor_name: newVendor.name,
+        phone: newVendor.phone,
+        email: newVendor.email,
+        address: newVendor.address,
+        gstin: newVendor.gstin,
       }
     ]);
 
@@ -143,7 +138,7 @@ export default function PurchasesPage() {
                     {purchaseOrders.map((po) => (
                       <tr key={po.id} className="hover:bg-slate-50/50">
                         <td className="p-4 font-bold text-slate-900">{po.id.slice(0, 8)}...</td>
-                        <td className="p-4 text-slate-700">{po.vendors?.name || 'Unknown Vendor'}</td>
+                        <td className="p-4 text-slate-700">{po.vendors?.vendor_name || 'Unknown Vendor'}</td>
                         <td className="p-4">
                           <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-bold uppercase">
                             {po.status || 'Pending'}
@@ -209,7 +204,7 @@ export default function PurchasesPage() {
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold rounded-xl text-sm shadow transition"
+                  className="w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-sm shadow transition"
                 >
                   Save Vendor
                 </button>
@@ -233,7 +228,7 @@ export default function PurchasesPage() {
                   <tbody className="divide-y divide-slate-100">
                     {vendors.map((v) => (
                       <tr key={v.id} className="hover:bg-slate-50/50">
-                        <td className="p-4 font-bold text-slate-900">{v.name}</td>
+                        <td className="p-4 font-bold text-slate-900">{v.vendor_name}</td>
                         <td className="p-4 text-slate-600">{v.phone}</td>
                         <td className="p-4 text-slate-600">{v.gstin || 'N/A'}</td>
                         <td className="p-4 text-slate-600">{v.address || 'N/A'}</td>
@@ -246,16 +241,16 @@ export default function PurchasesPage() {
           </div>
         )}
 
-        {/* Tab 3: Distributor Bill Import (CSV/Excel Mapping) */}
+        {/* Tab 3: Distributor Bill Import */}
         {activeTab === 'import' && (
           <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm max-w-2xl mx-auto space-y-6">
             <div className="text-center space-y-2">
-              <FileSpreadsheet className="w-12 h-12 text-brand-yellow mx-auto stroke-1" />
+              <FileSpreadsheet className="w-12 h-12 text-amber-500 mx-auto stroke-1" />
               <h3 className="text-xl font-bold text-slate-900">Distributor Bill CSV/XLSX Import</h3>
               <p className="text-sm text-slate-600">Upload your distributor invoice to map columns, verify schemes (10+1), and review stock inward before updating inventory.</p>
             </div>
 
-            <div className="border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-4 hover:border-brand-yellow transition cursor-pointer">
+            <div className="border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-4 hover:border-amber-400 transition cursor-pointer">
               <Upload className="w-8 h-8 text-slate-400 mx-auto" />
               <div className="text-sm font-medium text-slate-700">Click to upload or drag & drop distributor bill CSV</div>
               <input type="file" accept=".csv, .xlsx" className="hidden" />
