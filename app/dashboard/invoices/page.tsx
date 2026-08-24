@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Search, Calendar, Printer, MessageSquare, FileText, RotateCcw } from 'lucide-react';
+import { Search, Calendar, Printer, MessageSquare, FileText, RotateCcw, XCircle } from 'lucide-react';
 
 export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
@@ -11,6 +11,10 @@ export default function InvoicesPage() {
   const [invoiceNoQuery, setInvoiceNoQuery] = useState('');
   const [dateQuery, setDateQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+
+  // Return Modal State
+  const [returnModalInvoice, setReturnModalInvoice] = useState<any | null>(null);
+  const [returnQuantities, setReturnQuantities] = useState<{ [itemId: string]: number }>({});
 
   const router = useRouter();
   const supabase = createClient();
@@ -57,8 +61,9 @@ export default function InvoicesPage() {
     setLoading(false);
   }
 
-  const handleCancelOrReturnSale = async (invoiceId: string) => {
-    if (!confirm('Are you sure you want to cancel/return this invoice? This will restore stock into inventory.')) return;
+  // Workflow 1: Cancel Entire Invoice
+  const handleCancelInvoice = async (invoiceId: string) => {
+    if (!confirm('Are you sure you want to CANCEL this entire invoice? This will void the bill and restore all items into inventory.')) return;
 
     const { data: items } = await supabase
       .from('sale_items')
@@ -86,10 +91,80 @@ export default function InvoicesPage() {
 
     await supabase
       .from('sales')
-      .update({ payment_status: 'Returned / Cancelled', final_amount: 0 })
+      .update({ payment_status: 'Cancelled', final_amount: 0 })
       .eq('id', invoiceId);
 
-    alert('Invoice successfully returned and stock restored!');
+    alert('Invoice successfully cancelled and stock restored!');
+    fetchInvoices();
+  };
+
+  // Workflow 2: Open Return Modal
+  const openReturnModal = (inv: any) => {
+    setReturnModalInvoice(inv);
+    const initialQtys: { [id: string]: number } = {};
+    inv.sale_items?.forEach((item: any) => {
+      initialQtys[item.id] = 0; // Default return qty is 0
+    });
+    setReturnQuantities(initialQtys);
+  };
+
+  // Submit Partial Return
+  const handleProcessReturn = async () => {
+    if (!returnModalInvoice) return;
+
+    let totalRefund = 0;
+    const orgId = returnModalInvoice.organization_id;
+
+    for (const item of returnModalInvoice.sale_items) {
+      const returnQty = Number(returnQuantities[item.id]) || 0;
+      if (returnQty > 0) {
+        if (returnQty > item.quantity_sold) {
+          alert(`Return quantity for ${item.products?.product_name} cannot exceed sold quantity (${item.quantity_sold}).`);
+          return;
+        }
+
+        // Calculate prorated refund for returned quantity
+        const unitRefund = Number(item.total_price) / Number(item.quantity_sold);
+        totalRefund += unitRefund * returnQty;
+
+        // Restore stock to batch
+        if (item.batch_id) {
+          const { data: batch } = await supabase
+            .from('product_batches')
+            .select('stock_qty')
+            .eq('id', item.batch_id)
+            .single();
+
+          if (batch) {
+            await supabase
+              .from('product_batches')
+              .update({ stock_qty: batch.stock_qty + returnQty })
+              .eq('id', item.batch_id);
+          }
+        }
+
+        // Update sale item quantity sold
+        const newQtySold = Number(item.quantity_sold) - returnQty;
+        const newTotalPrice = Number(item.total_price) - (unitRefund * returnQty);
+        await supabase
+          .from('sale_items')
+          .update({ quantity_sold: newQtySold, total_price: newTotalPrice })
+          .eq('id', item.id);
+      }
+    }
+
+    // Update overall invoice final amount
+    const newFinalAmount = Math.max(0, Number(returnModalInvoice.final_amount) - totalRefund);
+    await supabase
+      .from('sales')
+      .update({ 
+        final_amount: newFinalAmount,
+        payment_status: newFinalAmount === 0 ? 'Fully Returned' : 'Partially Returned'
+      })
+      .eq('id', returnModalInvoice.id);
+
+    alert(`Return processed successfully! Refund amount: ₹${totalRefund.toFixed(2)}`);
+    setReturnModalInvoice(null);
     fetchInvoices();
   };
 
@@ -175,25 +250,37 @@ export default function InvoicesPage() {
                   <td className="p-4 font-mono text-slate-600">{inv.customers?.phone || 'N/A'}</td>
                   <td className="p-4 text-slate-500">{new Date(inv.created_at).toLocaleString()}</td>
                   <td className="p-4 font-black text-amber-600">₹{Number(inv.final_amount).toFixed(2)}</td>
-                  <td className="p-4 text-right space-x-2">
+                  <td className="p-4 text-right space-x-1.5">
                     <button
                       onClick={() => setSelectedInvoice(inv)}
-                      className="bg-slate-950 text-white font-bold text-[11px] px-3.5 py-2 rounded-xl shadow hover:bg-slate-900 transition"
+                      className="bg-slate-950 text-white font-bold text-[11px] px-3 py-1.5 rounded-xl shadow hover:bg-slate-900 transition"
                     >
-                      View Tax Invoice
+                      View
                     </button>
                     <button
                       onClick={() => sendWhatsAppInvoice(inv)}
-                      className="bg-emerald-600 text-white font-bold text-[11px] px-3.5 py-2 rounded-xl shadow hover:bg-emerald-700 transition inline-flex items-center gap-1"
+                      className="bg-emerald-600 text-white font-bold text-[11px] px-3 py-1.5 rounded-xl shadow hover:bg-emerald-700 transition inline-flex items-center gap-1"
                     >
                       <MessageSquare className="w-3 h-3" /> WhatsApp
                     </button>
-                    {inv.payment_status !== 'Returned / Cancelled' && (
+
+                    {/* Return Action Button */}
+                    {inv.payment_status !== 'Cancelled' && inv.payment_status !== 'Fully Returned' && (
                       <button
-                        onClick={() => handleCancelOrReturnSale(inv.id)}
-                        className="bg-red-600 text-white font-bold text-[11px] px-3.5 py-2 rounded-xl shadow hover:bg-red-700 transition inline-flex items-center gap-1"
+                        onClick={() => openReturnModal(inv)}
+                        className="bg-amber-500 text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow hover:bg-amber-600 transition inline-flex items-center gap-1"
                       >
                         <RotateCcw className="w-3 h-3" /> Return
+                      </button>
+                    )}
+
+                    {/* Cancel Invoice Action Button */}
+                    {inv.payment_status !== 'Cancelled' && inv.payment_status !== 'Fully Returned' && (
+                      <button
+                        onClick={() => handleCancelInvoice(inv.id)}
+                        className="bg-red-600 text-white font-bold text-[11px] px-3 py-1.5 rounded-xl shadow hover:bg-red-700 transition inline-flex items-center gap-1"
+                      >
+                        <XCircle className="w-3 h-3" /> Cancel
                       </button>
                     )}
                   </td>
@@ -203,6 +290,58 @@ export default function InvoicesPage() {
           </table>
         )}
       </div>
+
+      {/* Partial Return Modal */}
+      {returnModalInvoice && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Process Item Return</h3>
+                <p className="text-xs text-slate-500">Invoice: {returnModalInvoice.invoice_number} • Specify return quantity per item.</p>
+              </div>
+              <button onClick={() => setReturnModalInvoice(null)} className="text-slate-500 hover:text-slate-900 font-bold">✕</button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto space-y-3">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 font-bold text-slate-600">
+                  <tr>
+                    <th className="p-2.5">Item Name</th>
+                    <th className="p-2.5">Batch</th>
+                    <th className="p-2.5">Sold Qty</th>
+                    <th className="p-2.5">Return Qty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {returnModalInvoice.sale_items?.map((item: any) => (
+                    <tr key={item.id}>
+                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name}</td>
+                      <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number}</td>
+                      <td className="p-2.5 font-bold">{item.quantity_sold}</td>
+                      <td className="p-2.5">
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.quantity_sold}
+                          value={returnQuantities[item.id] || 0}
+                          onChange={(e) => setReturnQuantities({ ...returnQuantities, [item.id]: Number(e.target.value) })}
+                          className="w-20 px-2.5 py-1 border border-slate-300 rounded-xl font-bold text-center"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t">
+              <button onClick={() => setReturnModalInvoice(null)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">Cancel</button>
+              <button onClick={handleProcessReturn} className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-xl text-xs shadow">Confirm Return & Restock</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tax Invoice Modal */}
       {selectedInvoice && (
@@ -222,7 +361,6 @@ export default function InvoicesPage() {
               </div>
             </div>
 
-            {/* Printable Tax Invoice Layout */}
             <div className="space-y-4 text-xs text-slate-800">
               <div className="flex justify-between items-start border-b border-slate-200 pb-4">
                 <div>
