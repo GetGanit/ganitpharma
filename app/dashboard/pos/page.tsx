@@ -5,14 +5,13 @@ import { createClient } from '@/utils/supabase/client';
 import { 
   Receipt, 
   Search, 
-  Barcode, 
   Trash2, 
-  Printer, 
   CheckCircle2, 
   ArrowLeft,
   CreditCard,
   Banknote,
-  Smartphone
+  Smartphone,
+  AlertCircle
 } from 'lucide-react';
 
 interface CartItem {
@@ -24,7 +23,7 @@ interface CartItem {
   gst_percentage: number;
   quantity: number;
   pack_size: number;
-  is_loose: boolean; // true if selling individual tablets/units
+  is_loose: boolean;
   available_qty: number;
 }
 
@@ -36,11 +35,14 @@ export default function POSPage() {
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
 
-  // Keyboard shortcut listener (F2 for search focus, Ctrl+P for print/checkout)
+  // Keyboard shortcut listener (F2 for search focus)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -87,12 +89,21 @@ export default function POSPage() {
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.pack_size || 10;
     const sellingPrice = batch.selling_rate || product.selling_price || 100;
+    const availableQty = batch.current_quantity || 0;
 
     if (existingIndex > -1) {
       const updated = [...cart];
+      if (updated[existingIndex].quantity + 1 > availableQty) {
+        alert(`Stock limit reached! Only ${availableQty} units available in batch ${batch.batch_number}.`);
+        return;
+      }
       updated[existingIndex].quantity += 1;
       setCart(updated);
     } else {
+      if (availableQty <= 0) {
+        alert(`Batch ${batch.batch_number} is out of stock!`);
+        return;
+      }
       setCart([
         ...cart,
         {
@@ -105,7 +116,7 @@ export default function POSPage() {
           quantity: 1,
           pack_size: packSize,
           is_loose: false,
-          available_qty: batch.current_quantity || 100,
+          available_qty: availableQty,
         },
       ]);
     }
@@ -116,6 +127,10 @@ export default function POSPage() {
 
   const updateQuantity = (index: number, qty: number) => {
     if (qty <= 0) return;
+    if (qty > cart[index].available_qty) {
+      alert(`Insufficient stock! Only ${cart[index].available_qty} units available for this batch.`);
+      return;
+    }
     const updated = [...cart];
     updated[index].quantity = qty;
     setCart(updated);
@@ -143,11 +158,62 @@ export default function POSPage() {
   const handleCompleteSale = async () => {
     if (cart.length === 0) return;
     setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
 
-    // Atomic checkout & inventory deduction logic will commit here via Supabase RPC/transaction
-    alert(`Sale completed successfully! Total: ₹${finalTotal.toFixed(2)} (${paymentMethod.toUpperCase()})`);
-    setCart([]);
-    setLoading(false);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile?.organization_id) {
+      setError('Tenant organization ID not found.');
+      setLoading(false);
+      return;
+    }
+
+    // Format cart items for RPC function
+    const formattedItems = cart.map(item => {
+      const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
+      return {
+        id: item.id,
+        batch_number: item.batch_number,
+        quantity: item.quantity,
+        unit_price: unitPrice,
+        total_price: unitPrice * item.quantity
+      };
+    });
+
+    // Call atomic Supabase RPC function
+    const { data, error: rpcError } = await supabase.rpc('complete_sale_atomic', {
+      p_org_id: profile.organization_id,
+      p_user_id: user.id,
+      p_customer_phone: customerPhone || 'Walk-in',
+      p_customer_name: customerName || 'Retail Customer',
+      p_payment_method: paymentMethod,
+      p_subtotal: subtotal,
+      p_gst_total: totalGST,
+      p_total_amount: finalTotal,
+      p_items: formattedItems
+    });
+
+    if (rpcError) {
+      setError(rpcError.message);
+      setLoading(false);
+    } else if (data && data.success) {
+      setSuccessMsg(`Sale successful! Invoice: ${data.invoice_number}`);
+      setCart([]);
+      setCustomerPhone('');
+      setCustomerName('');
+      setLoading(false);
+    }
   };
 
   return (
@@ -165,7 +231,7 @@ export default function POSPage() {
             Shortcut: <strong className="text-brand-yellow">F2</strong> to Search
           </span>
           <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
-            Barcode Scanner Ready
+            Atomic Inventory Lock Active
           </span>
         </div>
       </header>
@@ -175,6 +241,19 @@ export default function POSPage() {
         
         {/* Left / Center: Search & Catalog */}
         <div className="lg:col-span-2 flex flex-col space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          {successMsg && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="font-bold">{successMsg}</span>
+            </div>
+          )}
+
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
             <div className="relative">
               <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
@@ -206,7 +285,7 @@ export default function POSPage() {
                           onClick={() => addToCart(prod, batch)}
                           className="bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm"
                         >
-                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Stock: {batch.current_quantity}
+                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Available Stock: {batch.current_quantity}
                         </button>
                       ))}
                     </div>
@@ -269,6 +348,7 @@ export default function POSPage() {
                               onChange={(e) => updateQuantity(idx, parseInt(e.target.value) || 1)}
                               className="w-16 px-2 py-1 border border-slate-300 rounded text-center text-sm font-bold"
                             />
+                            <span className="text-[10px] text-slate-400 block mt-0.5">Max: {item.available_qty}</span>
                           </td>
                           <td className="py-3 text-slate-600">₹{effectivePrice.toFixed(2)}</td>
                           <td className="py-3 font-bold text-slate-900">₹{(effectivePrice * item.quantity).toFixed(2)}</td>
@@ -359,7 +439,7 @@ export default function POSPage() {
               disabled={loading || cart.length === 0}
               className="w-full bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold py-4 rounded-xl shadow-md transition text-base flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <CheckCircle2 className="w-5 h-5" /> Complete Sale & Print Invoice
+              <CheckCircle2 className="w-5 h-5" /> {loading ? 'Processing Sale...' : 'Complete Sale & Print Invoice'}
             </button>
           </div>
         </div>
