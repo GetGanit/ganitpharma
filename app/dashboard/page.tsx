@@ -1,255 +1,178 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { 
-  LayoutDashboard, 
-  Receipt, 
-  Package, 
-  ShoppingBag, 
-  AlertTriangle, 
-  TrendingUp, 
-  LogOut, 
-  ShieldAlert,
-  ArrowUpRight,
-  PlusCircle,
-  Calendar
-} from 'lucide-react';
+import { ShoppingCart, Package, Truck, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [orgName, setOrgName] = useState('GanitPharma Pharmacy');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [stats, setStats] = useState({
-    periodSales: '₹0.00',
+  const [metrics, setMetrics] = useState({
+    todaySales: 0,
     invoiceCount: 0,
-    totalProducts: 0,
-    lowStockCount: 0,
+    totalItems: 0,
+    lowStock: 0,
     pendingPOs: 0,
   });
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    async function loadDashboardData() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+    fetchDashboardData();
+  }, []);
 
-      // Fetch user profile & organization name
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id, full_name, role')
-        .eq('id', user.id)
-        .single();
-
-      if (profile?.organization_id) {
-        const { data: org } = await supabase
-          .from('organizations')
-          .select('name')
-          .eq('id', profile.organization_id)
-          .single();
-        
-        if (org) setOrgName(org.name);
-
-        // Fetch product count
-        const { count: prodCount } = await supabase
-          .from('products')
-          .select('*', { count: 'exact', head: true })
-          .eq('organization_id', profile.organization_id);
-
-        // Fetch sales for the selected date
-        const startOfDay = `${selectedDate}T00:00:00`;
-        const endOfDay = `${selectedDate}T23:59:59`;
-
-        const { data: salesData, error: salesError } = await supabase
-          .from('sales')
-          .select('total_amount')
-          .eq('organization_id', profile.organization_id)
-          .gte('created_at', startOfDay)
-          .lte('created_at', endOfDay);
-
-        let totalSales = 0;
-        let count = 0;
-        if (!salesError && salesData) {
-          count = salesData.length;
-          totalSales = salesData.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0);
-        }
-
-        setStats({
-          periodSales: `₹${totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-          invoiceCount: count,
-          totalProducts: prodCount || 0,
-          lowStockCount: 0, // Will link to stock threshold query in inventory module
-          pendingPOs: 0,
-        });
-      }
-
-      setLoading(false);
+  async function fetchDashboardData() {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
     }
 
-    loadDashboardData();
-  }, [router, supabase, selectedDate]);
+    const orgId = user.user_metadata?.organization_id;
+    if (orgId) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      // Fetch today's sales
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select('final_amount')
+        .eq('organization_id', orgId)
+        .gte('created_at', `${todayStr}T00:00:00`);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
+      const todaySales = salesData?.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0) || 0;
+      const invoiceCount = salesData?.length || 0;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-600 font-medium">
-        Loading GanitPharma Workspace...
-      </div>
-    );
+      // Fetch product catalog count
+      const { count: prodCount } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', orgId);
+
+      // Fetch low stock batches
+      const { data: batchData } = await supabase
+        .from('product_batches')
+        .select('stock_qty')
+        .eq('organization_id', orgId)
+        .lt('stock_qty', 10);
+
+      const lowStock = batchData?.length || 0;
+
+      setMetrics({
+        todaySales,
+        invoiceCount,
+        totalItems: prodCount || 0,
+        lowStock,
+        pendingPOs: 0,
+      });
+    }
+    setLoading(false);
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar Navigation */}
-      <aside className="w-64 bg-slate-900 text-slate-300 hidden md:flex flex-col justify-between border-r border-slate-800">
-        <div>
-          <div className="h-16 px-6 flex items-center border-b border-slate-800">
-            <span className="text-xl font-bold tracking-tight text-white">
-              Ganit<span className="text-brand-yellow">Pharma</span>
-            </span>
-          </div>
-          <nav className="p-4 space-y-1">
-            <a href="/dashboard" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-brand-yellow text-slate-950 font-bold text-sm">
-              <LayoutDashboard className="w-4 h-4" /> Dashboard
-            </a>
-            <a href="/dashboard/pos" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-300 transition text-sm font-medium">
-              <Receipt className="w-4 h-4" /> POS / Billing <span className="ml-auto text-[10px] bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded font-bold">F2</span>
-            </a>
-            <a href="/dashboard/inventory" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-300 transition text-sm font-medium">
-              <Package className="w-4 h-4" /> Inventory & Stock
-            </a>
-            <a href="/dashboard/purchases" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-300 transition text-sm font-medium">
-              <ShoppingBag className="w-4 h-4" /> Purchases & POs
-            </a>
-          </nav>
-        </div>
+  const currentDate = new Date().toLocaleDateString('en-GB');
 
-        <div className="p-4 border-t border-slate-800">
-          <button 
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition text-sm font-medium"
+  return (
+    <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
+      {/* Top Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-extrabold text-slate-950">GanitPharma Pharmacy</h1>
+            <span className="bg-slate-100 text-slate-700 font-bold text-xs px-3 py-1 rounded-full border border-slate-200">Active Tenant</span>
+          </div>
+          <p className="text-sm text-slate-500 mt-1">Track sales performance and operational health metrics.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700">
+            <Calendar className="w-4 h-4 text-slate-400" /> Sales Date: {currentDate}
+          </div>
+          <button
+            onClick={() => router.push('/dashboard/pos')}
+            className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
           >
-            <LogOut className="w-4 h-4" /> Sign Out
+            <ShoppingCart className="w-4 h-4" /> New Bill (POS)
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-slate-900">{orgName}</h1>
-            <span className="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-semibold border border-slate-200">Active Tenant</span>
+      {/* Metrics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <div className="flex justify-between items-center text-slate-500 text-xs font-semibold">
+            <span>Sales for {new Date().toISOString().split('T')[0]}</span>
+            <ArrowUpRight className="w-4 h-4 text-green-600" />
           </div>
-          <div className="flex items-center gap-4">
-            <a href="/dashboard/pos" className="bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold text-xs px-4 py-2 rounded-lg shadow-sm transition flex items-center gap-1.5">
-              <PlusCircle className="w-4 h-4" /> New Bill (POS)
-            </a>
+          <div className="text-3xl font-extrabold text-slate-950">
+            ₹{metrics.todaySales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
-        </header>
+          <div className="text-xs text-slate-400">{metrics.invoiceCount} invoices completed on this date</div>
+        </div>
 
-        {/* Dashboard Body */}
-        <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <div className="flex justify-between items-center text-slate-500 text-xs font-semibold">
+            <span>Total Catalog Items</span>
+            <Package className="w-4 h-4 text-slate-400" />
+          </div>
+          <div className="text-3xl font-extrabold text-slate-950">{metrics.totalItems}</div>
+          <div className="text-xs text-slate-400">Active SKUs in inventory</div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <div className="flex justify-between items-center text-slate-500 text-xs font-semibold">
+            <span>Low-Stock Alerts</span>
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-3xl font-extrabold text-slate-950">{metrics.lowStock}</div>
+          <div className="text-xs text-amber-600 font-medium">Requires reordering</div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <div className="flex justify-between items-center text-slate-500 text-xs font-semibold">
+            <span>Pending POs</span>
+            <ShieldCheck className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="text-3xl font-extrabold text-slate-950">{metrics.pendingPOs}</div>
+          <div className="text-xs text-slate-400">Awaiting distributor confirmation</div>
+        </div>
+      </div>
+
+      {/* Quick Operational Shortcuts */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <h3 className="text-base font-bold text-slate-950">Quick Operational Shortcuts</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div 
+            onClick={() => router.push('/dashboard/pos')}
+            className="p-5 rounded-xl border border-slate-200 hover:border-amber-400 transition cursor-pointer flex justify-between items-center group bg-slate-50/50"
+          >
             <div>
-              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Pharmacy Overview</h2>
-              <p className="text-sm text-slate-600">Track sales performance and operational health metrics.</p>
+              <h4 className="font-bold text-slate-900 text-sm">Launch POS Billing</h4>
+              <p className="text-xs text-slate-500 mt-0.5">Barcode scanning & loose strips</p>
             </div>
-            
-            {/* Date Selector for Historical Sales Audit */}
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm">
-              <Calendar className="w-4 h-4 text-slate-500" />
-              <span className="text-xs font-medium text-slate-600">Sales Date:</span>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
-              />
-            </div>
+            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition" />
           </div>
 
-          {/* Metrics Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-sm font-medium">
-                <span>Sales for {selectedDate}</span>
-                <TrendingUp className="w-4 h-4 text-brand-green" />
-              </div>
-              <div className="mt-4 text-3xl font-extrabold text-slate-900">{stats.periodSales}</div>
-              <div className="mt-2 text-xs text-slate-500 flex items-center gap-1">
-                <span className="text-slate-900 font-semibold">{stats.invoiceCount}</span> invoices completed on this date
-              </div>
+          <div 
+            onClick={() => router.push('/dashboard/inventory')}
+            className="p-5 rounded-xl border border-slate-200 hover:border-amber-400 transition cursor-pointer flex justify-between items-center group bg-slate-50/50"
+          >
+            <div>
+              <h4 className="font-bold text-slate-900 text-sm">Add Inventory / Batch</h4>
+              <p className="text-xs text-slate-500 mt-0.5">FEFO tracking & stock entry</p>
             </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-sm font-medium">
-                <span>Total Catalog Items</span>
-                <Package className="w-4 h-4 text-slate-400" />
-              </div>
-              <div className="mt-4 text-3xl font-extrabold text-slate-900">{stats.totalProducts}</div>
-              <div className="mt-2 text-xs text-slate-500">Active SKUs in inventory</div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-sm font-medium">
-                <span>Low-Stock Alerts</span>
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-              </div>
-              <div className="mt-4 text-3xl font-extrabold text-slate-900">{stats.lowStockCount}</div>
-              <div className="mt-2 text-xs text-amber-600 font-medium">Requires reordering</div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between text-slate-500 text-sm font-medium">
-                <span>Pending POs</span>
-                <ShieldAlert className="w-4 h-4 text-blue-500" />
-              </div>
-              <div className="mt-4 text-3xl font-extrabold text-slate-900">{stats.pendingPOs}</div>
-              <div className="mt-2 text-xs text-slate-500">Awaiting distributor confirmation</div>
-            </div>
+            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition" />
           </div>
 
-          {/* Quick Actions Panel */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <h3 className="text-base font-bold text-slate-900 mb-4">Quick Operational Shortcuts</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <a href="/dashboard/pos" className="p-4 rounded-xl border border-slate-200 hover:border-brand-yellow hover:bg-amber-50/50 transition flex items-center justify-between group">
-                <div>
-                  <div className="font-bold text-slate-900 group-hover:text-amber-900">Launch POS Billing</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Barcode scanning & loose strips</div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 text-slate-400 group-hover:text-amber-600" />
-              </a>
-
-              <a href="/dashboard/inventory" className="p-4 rounded-xl border border-slate-200 hover:border-brand-yellow hover:bg-amber-50/50 transition flex items-center justify-between group">
-                <div>
-                  <div className="font-bold text-slate-900 group-hover:text-amber-900">Add Inventory / Batch</div>
-                  <div className="text-xs text-slate-500 mt-0.5">FEFO tracking & stock entry</div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 text-slate-400 group-hover:text-amber-600" />
-              </a>
-
-              <a href="/dashboard/purchases" className="p-4 rounded-xl border border-slate-200 hover:border-brand-yellow hover:bg-amber-50/50 transition flex items-center justify-between group">
-                <div>
-                  <div className="font-bold text-slate-900 group-hover:text-amber-900">Import Distributor Bill</div>
-                  <div className="text-xs text-slate-500 mt-0.5">CSV/Excel column mapping</div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 text-slate-400 group-hover:text-amber-600" />
-              </a>
+          <div 
+            onClick={() => router.push('/dashboard/purchases')}
+            className="p-5 rounded-xl border border-slate-200 hover:border-amber-400 transition cursor-pointer flex justify-between items-center group bg-slate-50/50"
+          >
+            <div>
+              <h4 className="font-bold text-slate-900 text-sm">Import Distributor Bill</h4>
+              <p className="text-xs text-slate-500 mt-0.5">CSV/Excel column mapping</p>
             </div>
+            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition" />
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
