@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { ShoppingCart, Package, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle, Banknote, Smartphone, CreditCard, Sparkles, History, ArrowDownLeft, ArrowUpRight as ArrowUpRed } from 'lucide-react';
+import { ShoppingCart, Package, Calendar, ArrowUpRight, ShieldCheck, AlertTriangle, Banknote, Smartphone, CreditCard, Sparkles, History, Calculator } from 'lucide-react';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -37,7 +37,6 @@ export default function DashboardPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      // Fetch sales for the selected date
       const startDateTime = `${dateStr}T00:00:00`;
       const endDateTime = `${dateStr}T23:59:59`;
 
@@ -53,7 +52,6 @@ export default function DashboardPage() {
       const todaySales = validSales.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0);
       const invoiceCount = validSales.length;
 
-      // Fetch payment breakdowns
       const saleIds = salesData?.map(s => s.id) || [];
       let cashTotal = 0;
       let upiTotal = 0;
@@ -74,6 +72,10 @@ export default function DashboardPage() {
           const status = sale?.payment_status;
           const amt = Number(p.amount || 0);
 
+          // Handle single or array customer join safely
+          const custObj = Array.isArray(sale?.customers) ? sale.customers[0] : sale?.customers;
+          const customerName = custObj?.customer_name || 'Walk-in';
+
           if (status === 'Cancelled' || status === 'Fully Returned') {
             if (p.payment_mode === 'cash') {
               cashTotal -= amt;
@@ -83,7 +85,7 @@ export default function DashboardPage() {
                 invoice: sale.invoice_number,
                 type: 'Cash Refund / Payout',
                 amount: -amt,
-                customer: sale.customers?.customer_name || 'Walk-in',
+                customer: customerName,
                 status: status
               });
             }
@@ -96,7 +98,7 @@ export default function DashboardPage() {
                 invoice: sale.invoice_number,
                 type: 'Cash Sale Collected',
                 amount: amt,
-                customer: sale.customers?.customer_name || 'Walk-in',
+                customer: customerName,
                 status: 'Completed'
               });
             }
@@ -105,20 +107,20 @@ export default function DashboardPage() {
           }
         });
 
-        // Also catch cancelled sales that might not have a separate payment row
         salesData?.forEach(s => {
           if (s.payment_status === 'Cancelled') {
             const hasCashPay = paymentsData?.some(p => p.sale_id === s.id && p.payment_mode === 'cash');
             if (!hasCashPay) {
               const refundAmt = Number(s.final_amount || 0);
               cashTotal -= refundAmt;
+              const custObj = Array.isArray(s.customers) ? s.customers[0] : s.customers;
               ledgerEvents.push({
                 id: `${s.id}-cancel`,
                 time: new Date(s.created_at).toLocaleTimeString(),
                 invoice: s.invoice_number,
                 type: 'Cancelled Invoice Payout',
                 amount: -refundAmt,
-                customer: s.customers?.customer_name || 'Walk-in',
+                customer: custObj?.customer_name || 'Walk-in',
                 status: 'Cancelled'
               });
             }
@@ -128,13 +130,11 @@ export default function DashboardPage() {
 
       setCashLedger(ledgerEvents);
 
-      // Fetch product catalog count
       const { count: prodCount } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('organization_id', orgId);
 
-      // Fetch low stock batches
       const { data: batchData } = await supabase
         .from('product_batches')
         .select('stock_qty')
@@ -156,6 +156,10 @@ export default function DashboardPage() {
     }
     setLoading(false);
   }
+
+  const expectedNetCash = metrics.cashTotal;
+  const actualCashNum = 0;
+  const cashDiscrepancy = 0;
 
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-8 animate-fade-in bg-hero-gradient min-h-screen">
