@@ -859,7 +859,7 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Cart Table */}
+          {/* Cart Table with Subtotal and Combined Disc Amt (%) */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
             <div className="p-3.5 bg-slate-50 border-b border-slate-200 font-black text-slate-950 text-xs flex justify-between items-center">
               <span>Billing Items ({cart.length})</span>
@@ -886,8 +886,8 @@ export default function POSPage() {
                       <th className="p-2.5 font-bold">Unit Breakdown</th>
                       <th className="p-2.5 font-bold">Qty (Tabs)</th>
                       <th className="p-2.5 font-bold">Unit Price</th>
-                      <th className="p-2.5 font-bold">Disc %</th>
-                      <th className="p-2.5 font-bold">Disc Amt</th>
+                      <th className="p-2.5 font-bold">Subtotal</th>
+                      <th className="p-2.5 font-bold">Disc Amt (%)</th>
                       <th className="p-2.5 font-bold">Total</th>
                       <th className="p-2.5 text-right font-bold">Action</th>
                     </tr>
@@ -907,6 +907,7 @@ export default function POSPage() {
                       }
 
                       const netTotal = Math.max(0, gross - discAmt);
+                      const discPct = gross > 0 ? ((discAmt / gross) * 100).toFixed(0) : '0';
 
                       const fullPacks = Math.floor(qtyNum / item.pack_size);
                       const looseTabs = qtyNum % item.pack_size;
@@ -933,18 +934,10 @@ export default function POSPage() {
                             />
                           </td>
                           <td className="p-2.5 font-mono text-slate-700">₹{perUnitPrice.toFixed(2)}</td>
-                          <td className="p-2.5">
-                            <button 
-                              onClick={() => {
-                                setDiscountModalIndex(idx);
-                                setItemDiscountInput(item.discount_percent);
-                              }} 
-                              className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 py-1 rounded-xl font-bold"
-                            >
-                              {item.discount_percent > 0 ? `${item.discount_percent}%` : '+ Disc'}
-                            </button>
+                          <td className="p-2.5 font-mono font-bold text-slate-950">₹{gross.toFixed(2)}</td>
+                          <td className="p-2.5 font-mono text-red-600 font-bold">
+                            {discAmt > 0 ? `-₹${discAmt.toFixed(2)} (${discPct}%)` : '—'}
                           </td>
-                          <td className="p-2.5 font-mono text-red-600">₹{discAmt.toFixed(2)}</td>
                           <td className="p-2.5 font-black text-slate-950">₹{netTotal.toFixed(2)}</td>
                           <td className="p-2.5 text-right">
                             <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
@@ -1358,7 +1351,7 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 6mm;
+                  margin: 5mm;
                 }
                 body * {
                   visibility: hidden;
@@ -1371,10 +1364,11 @@ export default function POSPage() {
                   left: 0;
                   top: 0;
                   width: 100%;
-                  height: 100%;
+                  height: auto;
                   background: white !important;
                   display: block !important;
                   page-break-inside: avoid;
+                  page-break-after: avoid;
                 }
                 .print\\:hidden {
                   display: none !important;
