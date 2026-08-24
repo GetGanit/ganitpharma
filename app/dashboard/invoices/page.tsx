@@ -103,7 +103,7 @@ export default function InvoicesPage() {
     setReturnModalInvoice(inv);
     const initialQtys: { [id: string]: number } = {};
     inv.sale_items?.forEach((item: any) => {
-      initialQtys[item.id] = 0; // Default return qty is 0
+      initialQtys[item.id] = 0;
     });
     setReturnQuantities(initialQtys);
   };
@@ -336,7 +336,7 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal with Discount Display */}
+      {/* Tax Invoice Modal with Unit Price, Discount & Total breakdown */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
@@ -384,21 +384,23 @@ export default function InvoicesPage() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black">
-                    <th className="p-3">Item Description</th>
-                    <th className="p-3">Batch</th>
-                    <th className="p-3">Qty</th>
-                    <th className="p-3">GST %</th>
-                    <th className="p-3 text-right">Total (₹)</th>
+                    <th className="p-2.5">Item Description</th>
+                    <th className="p-2.5">Batch</th>
+                    <th className="p-2.5">Qty</th>
+                    <th className="p-2.5">Unit Price</th>
+                    <th className="p-2.5">GST %</th>
+                    <th className="p-2.5 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {selectedInvoice.sale_items?.map((item: any, idx: number) => (
                     <tr key={idx}>
-                      <td className="p-3 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                      <td className="p-3 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                      <td className="p-3">{item.quantity_sold}</td>
-                      <td className="p-3">{item.gst_percent}%</td>
-                      <td className="p-3 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
+                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
+                      <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                      <td className="p-2.5">{item.quantity_sold}</td>
+                      <td className="p-2.5 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
+                      <td className="p-2.5">{item.gst_percent}%</td>
+                      <td className="p-2.5 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -409,12 +411,6 @@ export default function InvoicesPage() {
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
-                {Number(selectedInvoice.discount_total || 0) > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Discount Total:</span>
-                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
