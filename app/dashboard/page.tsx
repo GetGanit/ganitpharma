@@ -15,7 +15,6 @@ export default function DashboardPage() {
     cashTotal: 0,
     upiTotal: 0,
     cardTotal: 0,
-    totalCashRefunds: 0,
   });
 
   // End-of-day Counter Cash Tally State
@@ -57,7 +56,7 @@ export default function DashboardPage() {
       let upiTotal = 0;
       let cardTotal = 0;
 
-      if (saleIds.length >0) {
+      if (saleIds.length > 0) {
         const { data: paymentsData } = await supabase
           .from('payments')
           .select('sale_id, payment_mode, amount')
@@ -67,33 +66,19 @@ export default function DashboardPage() {
         const saleStatusMap = new Map();
         salesData?.forEach(s => saleStatusMap.set(s.id, s.payment_status));
 
-        let cashRefundDeductions = 0;
-
         paymentsData?.forEach(p => {
           const status = saleStatusMap.get(p.sale_id);
           const amt = Number(p.amount || 0);
 
-          if (status === 'Cancelled' || status === 'Fully Returned') {
-            if (p.payment_mode === 'cash') {
-              cashRefundDeductions += amt;
-            }
-          } else {
+          if (status !== 'Cancelled' && status !== 'Fully Returned') {
             if (p.payment_mode === 'cash') cashTotal += amt;
             if (p.payment_mode === 'upi') upiTotal += amt;
             if (p.payment_mode === 'card') cardTotal += amt;
           }
         });
 
-        // Also check if any partial returns happened today by tracking final amount differences or direct deductions
-        salesData?.forEach(s => {
-          if (s.payment_status === 'Partially Returned') {
-            // Prorate cash refund reduction if partial return occurred
-            cashRefundDeductions += (Number(s.final_amount || 0) * 0); // Handled by updated final_amount totals
-          }
-        });
-
-        // Final Net Cash = Collected Cash minus Cash Payout Refunds
-        cashTotal = Math.max(0, cashTotal - cashRefundsTracker(salesData, paymentsData));
+        // Final Net Cash = Collected Cash minus Cash Payout Refunds (Allowed to go negative)
+        cashTotal = cashTotal - cashRefundsTracker(salesData || [], paymentsData || []);
       }
 
       // Fetch product catalog count
@@ -120,7 +105,6 @@ export default function DashboardPage() {
         cashTotal,
         upiTotal,
         cardTotal,
-        totalCashRefunds: 0,
       });
     }
     setLoading(false);
@@ -223,7 +207,9 @@ export default function DashboardPage() {
               <div className="p-3 bg-amber-100 text-amber-800 rounded-xl"><Banknote className="w-5 h-5" /></div>
               <div>
                 <span className="text-xs text-slate-500 block font-bold">Cash Collected (Net)</span>
-                <strong className="text-lg font-black text-slate-950">₹{metrics.cashTotal.toFixed(2)}</strong>
+                <strong className={`text-lg font-black ${metrics.cashTotal < 0 ? 'text-red-600' : 'text-slate-950'}`}>
+                  ₹{metrics.cashTotal.toFixed(2)}
+                </strong>
               </div>
             </div>
           </div>
@@ -262,7 +248,9 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
             <span className="text-xs text-slate-500 font-bold block">System Expected Cash (Drawer)</span>
-            <strong className="text-xl font-black text-slate-950">₹{expectedNetCash.toFixed(2)}</strong>
+            <strong className={`text-xl font-black ${expectedNetCash < 0 ? 'text-red-600' : 'text-slate-950'}`}>
+              ₹{expectedNetCash.toFixed(2)}
+            </strong>
             <span className="text-[10px] text-slate-400 block font-medium">Net cash adjusted for returns & cancellations</span>
           </div>
 
