@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Building2, User, MapPin, Phone, Mail, FileText, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
+import { Building2, User, MapPin, Phone, Mail, FileText, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function OnboardingPage() {
   const [formData, setFormData] = useState({
@@ -28,54 +28,43 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Sign up user in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // 1. Create organization record first
+    const { data: orgData, error: orgError } = await supabase
+      .from('organizations')
+      .insert([
+        {
+          name: formData.pharmacyName,
+          owner_name: formData.ownerName,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
+          gstin: formData.gstin,
+        },
+      ])
+      .select()
+      .single();
+
+    if (orgError || !orgData) {
+      setError(orgError?.message || 'Failed to create organization.');
+      setLoading(false);
+      return;
+    }
+
+    // 2. Sign up user in Supabase Auth and inject organization_id into metadata
+    const { error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
+      options: {
+        data: {
+          organization_id: orgData.id,
+        },
+      },
     });
 
     if (authError) {
       setError(authError.message);
       setLoading(false);
       return;
-    }
-
-    const userId = authData.user?.id;
-
-    if (userId) {
-      // 2. Create organization record
-      const { data: orgData, error: orgError } = await supabase
-        .from('organizations')
-        .insert([
-          {
-            name: formData.pharmacyName,
-            owner_name: formData.ownerName,
-            address: formData.address,
-            phone: formData.phone,
-            email: formData.email,
-            gstin: formData.gstin,
-          },
-        ])
-        .select()
-        .single();
-
-      if (orgError) {
-        setError(orgError.message);
-        setLoading(false);
-        return;
-      }
-
-      // 3. Link user to organization profile
-      if (orgData) {
-        await supabase.from('profiles').insert([
-          {
-            id: userId,
-            organization_id: orgData.id,
-            full_name: formData.ownerName,
-            role: 'owner',
-          },
-        ]);
-      }
     }
 
     setLoading(false);
@@ -87,7 +76,7 @@ export default function OnboardingPage() {
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-extrabold text-slate-900">
-            Ganit<span className="text-brand-yellow">Pharma</span> Onboarding
+            Ganit<span className="text-amber-400">Pharma</span> Onboarding
           </h2>
           <p className="mt-2 text-sm text-slate-600">
             Complete your ₹49,999 one-time purchase activation & configure your pharmacy profile.
@@ -116,7 +105,7 @@ export default function OnboardingPage() {
                     required
                     value={formData.pharmacyName}
                     onChange={handleInputChange}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="Sri Venkateshwara Medicals"
                   />
                 </div>
@@ -134,7 +123,7 @@ export default function OnboardingPage() {
                     required
                     value={formData.ownerName}
                     onChange={handleInputChange}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="Ramesh Kumar"
                   />
                 </div>
@@ -153,7 +142,7 @@ export default function OnboardingPage() {
                   required
                   value={formData.address}
                   onChange={handleInputChange}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                   placeholder="#123, Main Road, Bengaluru"
                 />
               </div>
@@ -172,7 +161,7 @@ export default function OnboardingPage() {
                     required
                     value={formData.phone}
                     onChange={handleInputChange}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="+91 98765 43210"
                   />
                 </div>
@@ -190,7 +179,7 @@ export default function OnboardingPage() {
                     required
                     value={formData.gstin}
                     onChange={handleInputChange}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="29AAAAA0000A1Z5"
                   />
                 </div>
@@ -210,7 +199,7 @@ export default function OnboardingPage() {
                     required
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent"
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     placeholder="pharmacy@gmail.com"
                   />
                 </div>
@@ -224,7 +213,7 @@ export default function OnboardingPage() {
                   required
                   value={formData.password}
                   onChange={handleInputChange}
-                  className="block w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:border-transparent mt-1"
+                  className="block w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:border-transparent mt-1"
                   placeholder="••••••••"
                 />
               </div>
@@ -234,7 +223,7 @@ export default function OnboardingPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow text-base font-bold text-slate-950 bg-brand-yellow hover:bg-brand-yellow-hover transition"
+                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow text-base font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition"
               >
                 {loading ? 'Activating Account...' : 'Complete Purchase & Launch Workspace'} <ArrowRight className="w-5 h-5" />
               </button>
