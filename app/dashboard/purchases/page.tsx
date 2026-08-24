@@ -6,10 +6,9 @@ import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft } fr
 
 export default function PurchasesPage() {
   const [loading, setLoading] = useState(true);
-  const [purchases, setPurchases] = useState<any[]>([]);
-  const [vendors, setVendors] = useState<any[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [vendorsList, setVendorsList] = useState<any[]>([]);
   
-  // View mode: 'list' | 'import' | 'new_po'
   const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po'>('list');
   
   // CSV Import State
@@ -20,8 +19,8 @@ export default function PurchasesPage() {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New PO State
-  const [poVendor, setPoVendor] = useState('');
+  // New PO Form State
+  const [poVendorId, setPoVendorId] = useState('');
   const [poItemName, setPoItemName] = useState('');
   const [poQty, setPoQty] = useState(50);
   const [poValue, setPoValue] = useState(2500);
@@ -30,10 +29,10 @@ export default function PurchasesPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    fetchPurchasesAndVendors();
+    fetchPurchasesData();
   }, []);
 
-  async function fetchPurchasesAndVendors() {
+  async function fetchPurchasesData() {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -43,24 +42,25 @@ export default function PurchasesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      // Fetch live purchases or sales/transactions
-      const { data: purchaseData } = await supabase
-        .from('sales')
+      // Fetch Real Purchase Orders
+      const { data: poData } = await supabase
+        .from('purchase_orders')
         .select('*')
         .eq('organization_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
-      if (purchaseData) setPurchases(purchaseData);
+      if (poData) setPurchaseOrders(poData);
 
-      // Fetch real vendors/suppliers if available, or fallback to empty array
+      // Fetch Real Vendors
       const { data: vendorData } = await supabase
-        .from('customers') // or suppliers table if configured
+        .from('vendors')
         .select('*')
-        .eq('organization_id', orgId)
-        .limit(5);
+        .eq('organization_id', orgId);
 
-      if (vendorData) setVendors(vendorData);
+      if (vendorData) {
+        setVendorsList(vendorData);
+        if (vendorData.length > 0) setPoVendorId(vendorData[0].id);
+      }
     }
     setLoading(false);
   }
@@ -168,6 +168,40 @@ export default function PurchasesPage() {
     setImporting(false);
   };
 
+  const handleCreatePO = async () => {
+    if (!poItemName) {
+      alert('Please enter item name.');
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) return;
+
+    const selectedVendor = vendorsList.find(v => v.id === poVendorId);
+    const poNumber = `PO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(100+Math.random()*900)}`;
+
+    const { error: poErr } = await supabase.from('purchase_orders').insert([{
+      organization_id: orgId,
+      po_number: poNumber,
+      vendor_id: poVendorId || null,
+      vendor_name: selectedVendor?.vendor_name || 'Direct Vendor',
+      item_summary: poItemName,
+      total_value: poValue,
+      status: 'Received'
+    }]);
+
+    if (poErr) {
+      alert('Error creating purchase order: ' + poErr.message);
+      return;
+    }
+
+    alert('Purchase Order created & received successfully!');
+    setPoItemName('');
+    setViewMode('list');
+    fetchPurchasesData();
+  };
+
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
       
@@ -211,28 +245,30 @@ export default function PurchasesPage() {
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
             <h3 className="font-bold text-slate-950 text-sm">Purchase orders</h3>
             {loading ? (
-              <div className="text-center py-8 text-slate-400 text-xs">Loading purchases...</div>
-            ) : purchases.length === 0 ? (
-              <div className="text-center py-8 text-slate-400 text-xs">No purchase orders found in database.</div>
+              <div className="text-center py-8 text-slate-400 text-xs">Loading purchase orders...</div>
+            ) : purchaseOrders.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-xs">No purchase orders found. Click "+ New purchase order" to create one.</div>
             ) : (
               <table className="w-full text-left text-xs">
                 <thead className="text-slate-400 uppercase border-b border-slate-100">
                   <tr>
-                    <th className="pb-3 font-semibold">PO / Invoice</th>
-                    <th className="pb-3 font-semibold">Date</th>
+                    <th className="pb-3 font-semibold">PO Number</th>
+                    <th className="pb-3 font-semibold">Vendor</th>
+                    <th className="pb-3 font-semibold">Item Summary</th>
                     <th className="pb-3 font-semibold">Value</th>
                     <th className="pb-3 font-semibold text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {purchases.map(p => (
+                  {purchaseOrders.map(p => (
                     <tr key={p.id} className="hover:bg-slate-50">
-                      <td className="py-3 font-mono font-bold text-slate-900">{p.invoice_number}</td>
-                      <td className="py-3 text-slate-600">{new Date(p.created_at).toLocaleDateString()}</td>
-                      <td className="py-3 font-extrabold text-slate-900">₹{Number(p.final_amount).toFixed(2)}</td>
+                      <td className="py-3 font-mono font-bold text-slate-900">{p.po_number}</td>
+                      <td className="py-3 text-slate-600">{p.vendor_name}</td>
+                      <td className="py-3 text-slate-600">{p.item_summary}</td>
+                      <td className="py-3 font-extrabold text-slate-900">₹{Number(p.total_value).toFixed(2)}</td>
                       <td className="py-3 text-right">
                         <span className="bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold text-[10px]">
-                          {p.payment_status}
+                          {p.status}
                         </span>
                       </td>
                     </tr>
@@ -245,15 +281,16 @@ export default function PurchasesPage() {
           {/* Vendors Card */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 h-fit">
             <h3 className="font-bold text-slate-950 text-sm">Registered Vendors</h3>
-            {vendors.length === 0 ? (
-              <p className="text-xs text-slate-400">No vendors registered yet.</p>
+            {vendorsList.length === 0 ? (
+              <p className="text-xs text-slate-400">No vendors found.</p>
             ) : (
               <div className="space-y-3">
-                {vendors.map(v => (
+                {vendorsList.map(v => (
                   <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
-                    <strong className="text-slate-900 text-xs block">{v.customer_name}</strong>
+                    <strong className="text-slate-900 text-xs block">{v.vendor_name}</strong>
                     <div className="text-[11px] text-slate-500 flex justify-between">
                       <span>{v.phone}</span>
+                      <span className="font-mono">{v.gstin}</span>
                     </div>
                   </div>
                 ))}
@@ -355,12 +392,14 @@ export default function PurchasesPage() {
           </div>
           <div className="space-y-4 text-xs">
             <div>
-              <label className="block font-medium text-slate-600 mb-1">Vendor Name</label>
-              <input type="text" placeholder="e.g. MedPlus Distributors" value={poVendor} onChange={(e) => setPoVendor(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
+              <label className="block font-medium text-slate-600 mb-1">Select Vendor</label>
+              <select value={poVendorId} onChange={(e) => setPoVendorId(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium">
+                {vendorsList.map(v => <option key={v.id} value={v.id}>{v.vendor_name}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block font-medium text-slate-600 mb-1">Item / Medicine Name</label>
-              <input type="text" placeholder="e.g. Paracetamol 650mg" value={poItemName} onChange={(e) => setPoItemName(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
+              <label className="block font-medium text-slate-600 mb-1">Item Summary / Medicine Name</label>
+              <input type="text" placeholder="e.g. Paracetamol 650mg & Stock Bundle" value={poItemName} onChange={(e) => setPoItemName(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -373,10 +412,7 @@ export default function PurchasesPage() {
               </div>
             </div>
             <button
-              onClick={() => {
-                alert('Purchase Order created successfully!');
-                setViewMode('list');
-              }}
+              onClick={handleCreatePO}
               className="w-full py-3 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl shadow transition"
             >
               Submit & Receive Purchase Order
