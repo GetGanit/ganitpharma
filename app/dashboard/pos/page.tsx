@@ -790,6 +790,7 @@ export default function POSPage() {
                       <th className="p-2.5 font-bold">Batch</th>
                       <th className="p-2.5 font-bold">Unit Breakdown</th>
                       <th className="p-2.5 font-bold">Qty (Tabs)</th>
+                      <th className="p-2.5 font-bold">Unit Price</th>
                       <th className="p-2.5 font-bold">Disc %</th>
                       <th className="p-2.5 font-bold">Total</th>
                       <th className="p-2.5 text-right font-bold">Action</th>
@@ -827,6 +828,7 @@ export default function POSPage() {
                               className="w-16 px-2 py-1 border border-slate-300 rounded-xl text-center font-bold"
                             />
                           </td>
+                          <td className="p-2.5 font-mono text-slate-700">₹{perUnitPrice.toFixed(2)}</td>
                           <td className="p-2.5">
                             <button 
                               onClick={() => {
