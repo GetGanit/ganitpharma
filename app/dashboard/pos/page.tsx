@@ -1352,10 +1352,14 @@ export default function POSPage() {
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:border-none print:p-0">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-0 print:m-0">
             
             <style jsx global>{`
               @media print {
+                @page {
+                  size: portrait;
+                  margin: 6mm;
+                }
                 body * {
                   visibility: hidden;
                 }
@@ -1367,9 +1371,10 @@ export default function POSPage() {
                   left: 0;
                   top: 0;
                   width: 100%;
-                  height: auto;
+                  height: 100%;
                   background: white !important;
                   display: block !important;
+                  page-break-inside: avoid;
                 }
                 .print\\:hidden {
                   display: none !important;
@@ -1424,8 +1429,7 @@ export default function POSPage() {
                     <th className="p-2.5">Batch</th>
                     <th className="p-2.5">Qty</th>
                     <th className="p-2.5">Unit Price</th>
-                    <th className="p-2.5">Disc %</th>
-                    <th className="p-2.5">Disc Amt</th>
+                    <th className="p-2.5">Discount</th>
                     <th className="p-2.5">GST %</th>
                     <th className="p-2.5 text-right">Total (₹)</th>
                   </tr>
@@ -1437,7 +1441,7 @@ export default function POSPage() {
                     const grossItemTotal = unitPrice * qty;
                     const netItemTotal = Number(item.total_price) || 0;
                     const itemDiscVal = Math.max(0, grossItemTotal - netItemTotal);
-                    const itemDiscPct = grossItemTotal > 0 ? ((itemDiscVal / grossItemTotal) * 100).toFixed(1) : '0';
+                    const itemDiscPct = grossItemTotal > 0 ? ((itemDiscVal / grossItemTotal) * 100).toFixed(0) : '0';
 
                     return (
                       <tr key={idx}>
@@ -1445,8 +1449,9 @@ export default function POSPage() {
                         <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
                         <td className="p-2.5">{qty}</td>
                         <td className="p-2.5 font-mono">₹{unitPrice.toFixed(2)}</td>
-                        <td className="p-2.5 text-amber-700 font-bold">{Number(itemDiscPct) > 0 ? `${itemDiscPct}%` : '—'}</td>
-                        <td className="p-2.5 font-mono text-red-600">{itemDiscVal > 0 ? `-₹${itemDiscVal.toFixed(2)}` : '—'}</td>
+                        <td className="p-2.5 font-mono text-red-600 font-bold">
+                          {itemDiscVal > 0 ? `-₹${itemDiscVal.toFixed(2)} (${itemDiscPct}%)` : '—'}
+                        </td>
                         <td className="p-2.5">{item.gst_percent}%</td>
                         <td className="p-2.5 text-right font-black">₹{netItemTotal.toFixed(2)}</td>
                       </tr>
@@ -1476,7 +1481,7 @@ export default function POSPage() {
                 </div>
               </div>
 
-              <div className="text-center text-[10px] text-slate-400 pt-6 border-t border-slate-100 font-medium">
+              <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100 font-medium">
                 Certified that the particulars given above are true and correct. Computer Generated Tax Invoice.
               </div>
             </div>
