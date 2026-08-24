@@ -1,9 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Zap, Package, FileText, BarChart3, ShieldCheck, CheckCircle2, Sparkles, ChevronDown } from 'lucide-react';
 
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  
+  // Intersection Observer to handle smooth scroll-into-view fade-ins per section
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('opacity-100', 'translate-y-0');
+          entry.target.classList.remove('opacity-0', 'translate-y-6');
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.scroll-fade-section').forEach((el) => {
+      observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const faqs = [
     { q: 'Is ₹49,999 a subscription?', a: 'No, it is a one-time purchase per pharmacy for lifetime access with no monthly fees.' },
@@ -15,10 +33,10 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#ffffff] via-[#f8fafc] to-[#f1f5f9] bg-[length:400%_400%] animate-pulse-slow text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950 overflow-hidden relative">
+    <div className="min-h-screen bg-gradient-to-br from-[#ffffff] via-[#f8fafc] to-[#f1f5f9] bg-[length:400%_400%] animate-pulse-slow text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950 overflow-x-hidden relative">
       
-      {/* Background Animated Ambient Glows */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] bg-brand-glow pointer-events-none blur-3xl animate-pulse-slow" />
+      {/* Background Ambient Glows */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] bg-brand-glow pointer-events-none blur-3xl" />
 
       {/* Top Banner */}
       <div className="bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 text-xs font-black py-2.5 px-4 text-center shadow-sm relative z-20">
@@ -55,8 +73,8 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative pt-20 pb-16 px-6 lg:px-16 max-w-7xl mx-auto text-center space-y-6 z-10 animate-fade-in">
+      {/* Hero Section (Loads instantly with no delay) */}
+      <section className="relative pt-20 pb-16 px-6 lg:px-16 max-w-7xl mx-auto text-center space-y-6 z-10">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-800 text-xs font-bold shadow-sm">
           <Sparkles className="w-4 h-4" /> Trusted by Independent Indian Retail Pharmacies
         </div>
@@ -85,8 +103,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Everything a busy counter needs (Features Grid) */}
-      <section id="features" className="py-16 px-6 lg:px-16 max-w-7xl mx-auto space-y-8 relative z-10">
+      {/* Features Grid (Fades in smoothly as you scroll down/up) */}
+      <section id="features" className="scroll-fade-section opacity-0 translate-y-6 transition-all duration-700 ease-out py-16 px-6 lg:px-16 max-w-7xl mx-auto space-y-8 relative z-10">
         <div className="space-y-1">
           <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-950">Everything a busy counter needs</h2>
         </div>
@@ -154,8 +172,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-16 px-6 lg:px-16 max-w-4xl mx-auto relative z-10">
+      {/* Pricing Section (Fades in on scroll) */}
+      <section id="pricing" className="scroll-fade-section opacity-0 translate-y-6 transition-all duration-700 ease-out py-16 px-6 lg:px-16 max-w-4xl mx-auto relative z-10">
         <div className="bg-white/90 backdrop-blur-md p-8 sm:p-12 rounded-3xl border border-slate-200/80 shadow-2xl space-y-6">
           <div className="space-y-1">
             <span className="text-xs font-bold text-amber-700 uppercase tracking-widest">GanitPharma — full product</span>
@@ -191,8 +209,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FAQ Section */}
-      <section id="faq" className="py-16 px-6 lg:px-16 max-w-4xl mx-auto space-y-6 relative z-10">
+      {/* FAQ Section (Fades in on scroll) */}
+      <section id="faq" className="scroll-fade-section opacity-0 translate-y-6 transition-all duration-700 ease-out py-16 px-6 lg:px-16 max-w-4xl mx-auto space-y-6 relative z-10">
         <h2 className="text-2xl font-black text-slate-950">Frequently asked questions</h2>
         <div className="divide-y divide-slate-200 border-t border-b border-slate-200">
           {faqs.map((faq, i) => (
