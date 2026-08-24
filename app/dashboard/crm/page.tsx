@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Users, Phone, MessageSquare, ArrowLeft, Search, Calendar, FileText, ShoppingBag, Eye } from 'lucide-react';
+import { Users, MessageSquare, ArrowLeft, Search, Calendar, FileText, Eye } from 'lucide-react';
 
 export default function CRMPage() {
   const [loading, setLoading] = useState(true);
@@ -27,51 +27,48 @@ export default function CRMPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       let query = supabase
         .from('sales')
-        .select('customer_phone, customer_name, total_amount, created_at')
-        .eq('organization_id', profile.organization_id)
-        .neq('customer_phone', 'Walk-in')
+        .select('final_amount, created_at, customers(customer_name, phone)')
+        .eq('organization_id', orgId)
         .order('created_at', { ascending: false });
-
-      if (searchQuery) {
-        query = query.ilike('customer_phone', `%${searchQuery}%`);
-      }
 
       const { data } = await query;
       if (data) {
-        // Group by phone number to build CRM profiles
         const uniqueMap = new Map();
-        data.forEach(item => {
-          if (!uniqueMap.has(item.customer_phone)) {
-            uniqueMap.set(item.customer_phone, {
-              phone: item.customer_phone,
-              name: item.customer_name || 'Valued Patient',
-              lastVisit: item.created_at,
-              totalSpent: Number(item.total_amount || 0),
-              visits: 1
-            });
-          } else {
-            const existing = uniqueMap.get(item.customer_phone);
-            existing.totalSpent += Number(item.total_amount || 0);
-            existing.visits += 1;
-            uniqueMap.set(item.customer_phone, existing);
+        data.forEach((item: any) => {
+          const phone = item.customers?.phone;
+          if (phone) {
+            if (!uniqueMap.has(phone)) {
+              uniqueMap.set(phone, {
+                phone: phone,
+                name: item.customers?.customer_name || 'Valued Patient',
+                lastVisit: item.created_at,
+                totalSpent: Number(item.final_amount || 0),
+                visits: 1
+              });
+            } else {
+              const existing = uniqueMap.get(phone);
+              existing.totalSpent += Number(item.final_amount || 0);
+              existing.visits += 1;
+              uniqueMap.set(phone, existing);
+            }
           }
         });
-        setCustomers(Array.from(uniqueMap.values()));
+        
+        let results = Array.from(uniqueMap.values());
+        if (searchQuery) {
+          results = results.filter((c: any) => c.phone.includes(searchQuery));
+        }
+        setCustomers(results);
       }
     }
     setLoading(false);
   }
 
-  // Fetch past 1 year invoices for a selected customer phone
   async function viewCustomerHistory(phone: string) {
     setSelectedCustomer(phone);
     setLoadingInvoices(true);
@@ -79,18 +76,14 @@ export default function CRMPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       const { data } = await supabase
         .from('sales')
-        .select('*, sale_items(*)')
-        .eq('organization_id', profile.organization_id)
-        .eq('customer_phone', phone)
+        .select('*, sale_items(*), customers!inner(phone)')
+        .eq('organization_id', orgId)
+        .eq('customers.phone', phone)
         .order('created_at', { ascending: false });
 
       if (data) setCustomerInvoices(data);
@@ -105,7 +98,6 @@ export default function CRMPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Header */}
       <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition flex items-center gap-1 text-xs font-semibold">
@@ -115,10 +107,7 @@ export default function CRMPage() {
         </div>
       </header>
 
-      {/* Main Body */}
       <div className="p-8 max-w-7xl w-full mx-auto space-y-6 flex-1">
-        
-        {/* Search & Overview */}
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="relative w-full sm:w-96">
             <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
@@ -127,7 +116,7 @@ export default function CRMPage() {
               placeholder="Search customer by mobile number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-brand-yellow focus:outline-none"
+              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
             />
           </div>
           <div className="text-xs text-slate-500">
@@ -136,8 +125,6 @@ export default function CRMPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Customer List Column */}
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 font-bold text-slate-900">Registered Customers ({customers.length})</div>
             {loading ? (
@@ -186,10 +173,9 @@ export default function CRMPage() {
             )}
           </div>
 
-          {/* Customer Past Invoice Drawer / Panel */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-fit">
             <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-brand-yellow" /> Past Invoices Archive
+              <FileText className="w-5 h-5 text-amber-400" /> Past Invoices Archive
             </h3>
 
             {!selectedCustomer ? (
@@ -206,16 +192,16 @@ export default function CRMPage() {
                 {customerInvoices.map((inv) => (
                   <div key={inv.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
                     <div className="flex justify-between font-bold text-slate-900">
-                      <span>{inv.invoice_number || 'INV-EXPRESS'}</span>
-                      <span className="text-amber-800">₹{Number(inv.total_amount).toFixed(2)}</span>
+                      <span>{inv.invoice_number}</span>
+                      <span className="text-amber-800">₹{Number(inv.final_amount).toFixed(2)}</span>
                     </div>
                     <div className="text-slate-500 flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> {new Date(inv.created_at).toLocaleDateString()} ({inv.payment_method.toUpperCase()})
+                      <Calendar className="w-3 h-3" /> {new Date(inv.created_at).toLocaleDateString()}
                     </div>
                     <div className="border-t border-slate-200 pt-2 space-y-1">
                       {inv.sale_items?.map((item: any, i: number) => (
                         <div key={i} className="flex justify-between text-slate-700">
-                          <span>Batch: {item.batch_number} (Qty: {item.quantity})</span>
+                          <span>Qty: {item.quantity_sold}</span>
                           <span className="font-semibold">₹{Number(item.total_price).toFixed(2)}</span>
                         </div>
                       ))}
@@ -225,7 +211,6 @@ export default function CRMPage() {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>
