@@ -23,18 +23,18 @@ export default function POSPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // Metadata & Overall Discount
+  // Metadata & Overall Discount (Initialized as empty string so 0 is not hardcoded)
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerDOB, setCustomerDOB] = useState('');
   const [doctorName, setDoctorName] = useState('15-OTHERS');
   const [salesOrigin, setSalesOrigin] = useState('Regular sales');
-  const [overallDiscount, setOverallDiscount] = useState<number>(0);
+  const [overallDiscount, setOverallDiscount] = useState<number | string>('');
 
   // Single Mode Payment Button Selection
   const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card'>('cash');
 
-  // Optional Split Payment Inputs (Initialized as empty strings so 0 is not hardcoded)
+  // Optional Split Payment Inputs
   const [splitCash, setSplitCash] = useState<number | string>('');
   const [splitUpi, setSplitUpi] = useState<number | string>('');
   const [splitCard, setSplitCard] = useState<number | string>('');
@@ -238,7 +238,6 @@ export default function POSPage() {
 
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
-    // FIXED: Use MRP as the primary selling price so it matches inventory MRP
     const sellingPrice = batch.mrp || batch.selling_rate || 100;
     const availableQty = batch.stock_qty || 0;
 
@@ -307,7 +306,7 @@ export default function POSPage() {
       setCustomerPhone('');
       setCustomerName('');
       setCustomerDOB('');
-      setOverallDiscount(0);
+      setOverallDiscount('');
       setSplitCash('');
       setSplitUpi('');
       setSplitCard('');
@@ -332,7 +331,7 @@ export default function POSPage() {
     setCustomerPhone('');
     setCustomerName('');
     setCustomerDOB('');
-    setOverallDiscount(0);
+    setOverallDiscount('');
     alert('Transaction successfully parked!');
   };
 
@@ -340,7 +339,7 @@ export default function POSPage() {
     setCart(parked.cart);
     setCustomerPhone(parked.customerPhone || '');
     setCustomerName(parked.customerName || '');
-    setOverallDiscount(parked.overallDiscount || 0);
+    setOverallDiscount(parked.overallDiscount || '');
     setParkedTransactions(parkedTransactions.filter(p => p.id !== parked.id));
     setShowParkedModal(false);
   };
@@ -364,8 +363,15 @@ export default function POSPage() {
     return acc + (gross - disc);
   }, 0);
 
-  const overallDiscVal = rawSubtotal * (overallDiscount / 100);
+  const overallDiscNum = Number(overallDiscount) || 0;
+  const overallDiscVal = rawSubtotal * (overallDiscNum / 100);
   const subtotal = rawSubtotal - overallDiscVal;
+  const totalDiscountAmount = cart.reduce((acc, item) => {
+    const qtyNum = Number(item.quantity) || 0;
+    const perUnitPrice = item.selling_price / item.pack_size;
+    const gross = perUnitPrice * qtyNum;
+    return acc + (gross * ((item.discount_percent || 0) / 100));
+  }, 0) + overallDiscVal;
 
   const totalGST = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
@@ -374,7 +380,7 @@ export default function POSPage() {
     const disc = gross * ((item.discount_percent || 0) / 100);
     let netItemTotal = gross - disc;
     if (rawSubtotal > 0) {
-      netItemTotal -= netItemTotal * (overallDiscount / 100);
+      netItemTotal -= netItemTotal * (overallDiscNum / 100);
     }
     return acc + (netItemTotal * item.gst_percentage) / (100 + item.gst_percentage);
   }, 0);
@@ -474,7 +480,7 @@ export default function POSPage() {
       const disc = gross * ((item.discount_percent || 0) / 100);
       let itemFinalTotal = gross - disc;
       if (rawSubtotal > 0) {
-        itemFinalTotal -= itemFinalTotal * (overallDiscount / 100);
+        itemFinalTotal -= itemFinalTotal * (overallDiscNum / 100);
       }
 
       await supabase.from('sale_items').insert([{
@@ -517,7 +523,7 @@ export default function POSPage() {
     setCustomerPhone('');
     setCustomerName('');
     setCustomerDOB('');
-    setOverallDiscount(0);
+    setOverallDiscount('');
     setSplitCash('');
     setSplitUpi('');
     setSplitCard('');
@@ -793,6 +799,7 @@ export default function POSPage() {
                       <th className="p-2.5 font-bold">Qty (Tabs)</th>
                       <th className="p-2.5 font-bold">Unit Price</th>
                       <th className="p-2.5 font-bold">Disc %</th>
+                      <th className="p-2.5 font-bold">Disc Amt</th>
                       <th className="p-2.5 font-bold">Total</th>
                       <th className="p-2.5 text-right font-bold">Action</th>
                     </tr>
@@ -802,8 +809,8 @@ export default function POSPage() {
                       const qtyNum = Number(item.quantity) || 0;
                       const perUnitPrice = item.selling_price / item.pack_size;
                       const gross = perUnitPrice * qtyNum;
-                      const discVal = gross * ((item.discount_percent || 0) / 100);
-                      const netTotal = gross - discVal;
+                      const discAmt = gross * ((item.discount_percent || 0) / 100);
+                      const netTotal = gross - discAmt;
 
                       const fullPacks = Math.floor(qtyNum / item.pack_size);
                       const looseTabs = qtyNum % item.pack_size;
@@ -841,6 +848,7 @@ export default function POSPage() {
                               {item.discount_percent > 0 ? `${item.discount_percent}%` : '+ Disc'}
                             </button>
                           </td>
+                          <td className="p-2.5 font-mono text-red-600">₹{discAmt.toFixed(2)}</td>
                           <td className="p-2.5 font-black text-slate-950">₹{netTotal.toFixed(2)}</td>
                           <td className="p-2.5 text-right">
                             <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
@@ -857,7 +865,7 @@ export default function POSPage() {
           </div>
 
           {/* Bottom Financial Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 grid grid-cols-5 gap-3 text-xs shadow-sm items-center">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 grid grid-cols-6 gap-3 text-xs shadow-sm items-center">
             <div>
               <span className="text-slate-400 font-bold block">Subtotal</span>
               <strong className="text-sm font-black text-slate-950">₹{subtotal.toFixed(2)}</strong>
@@ -868,10 +876,15 @@ export default function POSPage() {
                 type="number"
                 min="0"
                 max="100"
+                placeholder=""
                 value={overallDiscount}
-                onChange={(e) => setOverallDiscount(Number(e.target.value))}
+                onChange={(e) => setOverallDiscount(e.target.value)}
                 className="w-16 px-2.5 py-1.5 border border-slate-300 rounded-xl font-bold text-slate-900 mt-0.5"
               />
+            </div>
+            <div>
+              <span className="text-slate-400 font-bold block">Total Disc Amt</span>
+              <strong className="text-sm font-black text-red-600">₹{totalDiscountAmount.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-400 font-bold block">Included GST</span>
