@@ -21,6 +21,7 @@ interface CartItem {
 export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<any[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
   
   // Metadata & Overall Discount
@@ -123,6 +124,7 @@ export default function POSPage() {
     async function searchProducts() {
       if (!searchQuery.trim()) {
         setProducts([]);
+        setSelectedIndex(0);
         return;
       }
       const { data: { user } } = await supabase.auth.getUser();
@@ -138,19 +140,37 @@ export default function POSPage() {
           .limit(6);
 
         setProducts(data || []);
+        setSelectedIndex(0);
       }
     }
     const timer = setTimeout(searchProducts, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, supabase]);
 
+  // Handle Keyboard Navigation (Arrow Down / Up / Enter) in Search Input
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && products.length > 0) {
-      e.preventDefault();
-      const prod = products[0];
-      if (prod.product_batches && prod.product_batches.length > 0) {
-        const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
-        addToCart(prod, sortedBatches[0]);
+    if (products.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev + 1) % products.length);
+        return;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev - 1 + products.length) % products.length);
+        return;
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const prod = products[selectedIndex];
+        if (prod && prod.product_batches && prod.product_batches.length > 0) {
+          const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
+          
+          // Prompt for initial quantity before adding
+          const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
+          const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
+
+          addToCart(prod, sortedBatches[0], initialQty);
+        }
+        return;
       }
     }
   };
@@ -223,7 +243,7 @@ export default function POSPage() {
     }
   }
 
-  const addToCart = (product: any, specificBatch?: any) => {
+  const addToCart = (product: any, specificBatch?: any, customQty?: number) => {
     let batch = specificBatch;
     if (!batch && product.product_batches && product.product_batches.length > 0) {
       const sorted = [...product.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
@@ -235,6 +255,7 @@ export default function POSPage() {
       return;
     }
 
+    const addQty = customQty || 1;
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
     const sellingPrice = batch.mrp || batch.selling_rate || 100;
@@ -243,15 +264,15 @@ export default function POSPage() {
     if (existingIndex > -1) {
       const updated = [...cart];
       const currentQtyNum = Number(updated[existingIndex].quantity) || 0;
-      if (currentQtyNum + 1 > availableQty) {
+      if (currentQtyNum + addQty > availableQty) {
         alert(`Stock limit reached! Only ${availableQty} units available.`);
         return;
       }
-      updated[existingIndex].quantity = currentQtyNum + 1;
+      updated[existingIndex].quantity = currentQtyNum + addQty;
       setCart(updated);
     } else {
-      if (availableQty <= 0) {
-        alert(`Batch ${batch.batch_number} is out of stock!`);
+      if (availableQty <= 0 || addQty > availableQty) {
+        alert(`Insufficient stock! Available: ${availableQty}`);
         return;
       }
       setCart([
@@ -264,7 +285,7 @@ export default function POSPage() {
           selling_price: sellingPrice,
           mrp: batch.mrp || sellingPrice,
           gst_percentage: product.gst_rate || 12,
-          quantity: 1,
+          quantity: addQty,
           pack_size: packSize,
           available_qty: availableQty,
           discount_percent: 0,
@@ -273,6 +294,7 @@ export default function POSPage() {
     }
     setSearchQuery('');
     setProducts([]);
+    setSelectedIndex(0);
     setShowInventoryModal(false);
     searchInputRef.current?.focus();
   };
@@ -353,7 +375,7 @@ export default function POSPage() {
     }
   };
 
-  // Financial Calculations
+  // Financial Calculations with Proportional Overall Discount Distribution
   const grossTotalWithoutAnyDiscounts = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
@@ -454,7 +476,6 @@ export default function POSPage() {
 
     const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // FIXED: Save grossTotalWithoutAnyDiscounts as subtotal so discount is properly captured
     const { data: saleData, error: saleError } = await supabase
       .from('sales')
       .insert([{
@@ -479,10 +500,13 @@ export default function POSPage() {
       const qtyNum = Number(item.quantity) || 1;
       const perUnitPrice = item.selling_price / item.pack_size;
       const gross = perUnitPrice * qtyNum;
-      const disc = gross * ((item.discount_percent || 0) / 100);
-      let itemFinalTotal = gross - disc;
-      if (rawSubtotal > 0) {
-        itemFinalTotal -= itemFinalTotal * (overallDiscNum / 100);
+      const itemDisc = gross * ((item.discount_percent || 0) / 100);
+      let itemNet = gross - itemDisc;
+      
+      // Proportionally distribute overall bill discount to each item so math matches unit price * qty minus discount
+      if (rawSubtotal > 0 && overallDiscNum > 0) {
+        const proportion = itemNet / rawSubtotal;
+        itemNet -= overallDiscVal * proportion;
       }
 
       await supabase.from('sale_items').insert([{
@@ -493,7 +517,7 @@ export default function POSPage() {
         quantity_sold: qtyNum,
         unit_price: perUnitPrice,
         gst_percent: item.gst_percentage,
-        total_price: itemFinalTotal
+        total_price: itemNet
       }]);
 
       const { data: batchData } = await supabase
@@ -732,7 +756,7 @@ export default function POSPage() {
             </div>
           )}
 
-          {/* Search Bar */}
+          {/* Search Bar with Keyboard Navigation */}
           <div className="bg-white p-3 rounded-2xl border border-slate-200 relative shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
@@ -742,23 +766,28 @@ export default function POSPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="Scan Barcode or Search Medicine Name (Press F2, Enter to select)..."
+                placeholder="Scan Barcode or Search Medicine Name (Use Arrow Keys & Enter)..."
                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none text-sm"
               />
             </div>
 
             {products.length > 0 && (
               <div className="absolute left-3 right-3 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
-                {products.map((prod) => {
+                {products.map((prod, idx) => {
                   const batches = prod.product_batches || [];
                   const sortedBatches = [...batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
                   const nearestBatch = sortedBatches[0];
+                  const isSelected = idx === selectedIndex;
 
                   return (
                     <div 
                       key={prod.id} 
-                      onClick={() => nearestBatch && addToCart(prod, nearestBatch)}
-                      className="p-3.5 hover:bg-amber-50/50 transition cursor-pointer flex justify-between items-center"
+                      onClick={() => {
+                        const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
+                        const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
+                        if (nearestBatch) addToCart(prod, nearestBatch, initialQty);
+                      }}
+                      className={`p-3.5 transition cursor-pointer flex justify-between items-center ${isSelected ? 'bg-amber-100/80 border-l-4 border-amber-500' : 'hover:bg-amber-50/50'}`}
                     >
                       <div>
                         <div className="font-black text-slate-950 text-sm">{prod.product_name}</div>
@@ -818,8 +847,17 @@ export default function POSPage() {
                       const qtyNum = Number(item.quantity) || 0;
                       const perUnitPrice = item.selling_price / item.pack_size;
                       const gross = perUnitPrice * qtyNum;
-                      const discAmt = gross * ((item.discount_percent || 0) / 100);
-                      const netTotal = gross - discAmt;
+                      let discAmt = gross * ((item.discount_percent || 0) / 100);
+                      
+                      // Factor in overall proportional discount for accurate row representation
+                      if (rawSubtotal > 0 && overallDiscNum > 0) {
+                        const itemGrossNet = gross - discAmt;
+                        const propShare = itemGrossNet / rawSubtotal;
+                        const overallShare = overallDiscVal * propShare;
+                        discAmt += overallShare;
+                      }
+
+                      const netTotal = Math.max(0, gross - discAmt);
 
                       const fullPacks = Math.floor(qtyNum / item.pack_size);
                       const looseTabs = qtyNum % item.pack_size;
@@ -1062,7 +1100,11 @@ export default function POSPage() {
                       {prod.product_batches?.map((batch: any) => (
                         <button
                           key={batch.id}
-                          onClick={() => addToCart(prod, batch)}
+                          onClick={() => {
+                            const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
+                            const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
+                            addToCart(prod, batch, initialQty);
+                          }}
                           className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-sm transition"
                         >
                           Batch: {batch.batch_number} | Exp: {batch.expiry_date} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty} (Click to Add)
