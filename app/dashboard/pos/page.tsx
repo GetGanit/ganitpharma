@@ -23,7 +23,7 @@ export default function POSPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // Metadata & Overall Discount (Initialized as empty string so 0 is not hardcoded)
+  // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerDOB, setCustomerDOB] = useState('');
@@ -118,7 +118,7 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [customerPhone, supabase]);
 
-  // Search Products (Automatically picks the nearest expiry batch)
+  // Search Products
   useEffect(() => {
     async function searchProducts() {
       if (!searchQuery.trim()) {
@@ -144,7 +144,6 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, supabase]);
 
-  // Handle Enter Key in Search Input to add first matched product automatically
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && products.length > 0) {
       e.preventDefault();
@@ -459,7 +458,8 @@ export default function POSPage() {
         organization_id: orgId,
         invoice_number: invoiceNumber,
         customer_id: customerId,
-        subtotal: subtotal,
+        subtotal: rawSubtotal,
+        discount_total: totalDiscountAmount,
         gst_total: totalGST,
         final_amount: finalTotal,
         payment_status: 'Paid'
@@ -530,7 +530,6 @@ export default function POSPage() {
     setLoading(false);
   };
 
-  // Workflow 1: Cancel Entire Invoice from Journals
   const handleCancelInvoice = async (invoiceId: string) => {
     if (!confirm('Are you sure you want to CANCEL this entire invoice? This will void the bill and restore all items into inventory.')) return;
 
@@ -567,7 +566,6 @@ export default function POSPage() {
     fetchJournals();
   };
 
-  // Workflow 2: Open Return Modal from Journals
   const openReturnModal = (inv: any) => {
     setReturnModalInvoice(inv);
     const initialQtys: { [id: string]: number } = {};
@@ -577,7 +575,6 @@ export default function POSPage() {
     setReturnQuantities(initialQtys);
   };
 
-  // Submit Partial Return from Journals
   const handleProcessReturn = async () => {
     if (!returnModalInvoice) return;
 
@@ -1201,7 +1198,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Partial Return Modal from Journals */}
+      {/* Partial Return Modal */}
       {returnModalInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1253,7 +1250,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
+      {/* Tax Invoice Modal with Discount Display */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
@@ -1264,7 +1261,7 @@ export default function POSPage() {
                 <span className="text-xs text-slate-500 font-medium">Original for Recipient</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => window.print()} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1">
+                <button onClick={printTaxInvoice} className="bg-slate-950 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1">
                   <Printer className="w-3.5 h-3.5" /> Print / PDF
                 </button>
                 <button onClick={() => setSelectedInvoice(null)} className="text-slate-500 hover:text-slate-900 font-bold px-2">✕</button>
@@ -1304,6 +1301,7 @@ export default function POSPage() {
                     <th className="p-2.5">Item Description</th>
                     <th className="p-2.5">Batch</th>
                     <th className="p-2.5">Qty</th>
+                    <th className="p-2.5">Unit Price</th>
                     <th className="p-2.5">GST %</th>
                     <th className="p-2.5 text-right">Total (₹)</th>
                   </tr>
@@ -1314,6 +1312,7 @@ export default function POSPage() {
                       <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
                       <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
                       <td className="p-2.5">{item.quantity_sold}</td>
+                      <td className="p-2.5 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
                       <td className="p-2.5">{item.gst_percent}%</td>
                       <td className="p-2.5 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
                     </tr>
@@ -1326,6 +1325,12 @@ export default function POSPage() {
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
+                {Number(selectedInvoice.discount_total || 0) > 0 && (
+                  <div className="flex justify-between text-red-600 font-bold">
+                    <span>Overall Bill Discount:</span>
+                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
