@@ -77,10 +77,10 @@ export default function POSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Customer Lookup
+  // Instant Customer Lookup & Auto-Population
   useEffect(() => {
     async function lookupCustomer() {
-      if (customerPhone.length < 10) return;
+      if (customerPhone.length !== 10) return;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const orgId = user.user_metadata?.organization_id;
@@ -95,6 +95,16 @@ export default function POSPage() {
 
         if (data) {
           setCustomerName(data.customer_name || '');
+          if (data.dob) setCustomerDOB(data.dob);
+        } else {
+          // If customer doesn't exist yet, auto-register them immediately into the directory
+          await supabase.from('customers').insert([
+            {
+              organization_id: orgId,
+              phone: customerPhone,
+              customer_name: customerName || 'Retail Customer'
+            }
+          ]);
         }
       }
     }
@@ -344,6 +354,8 @@ export default function POSPage() {
 
       if (existingCust) {
         customerId = existingCust.id;
+        // Update name if changed
+        await supabase.from('customers').update({ customer_name: customerName || 'Retail Customer' }).eq('id', customerId);
       } else {
         const { data: newCust } = await supabase
           .from('customers')
@@ -703,7 +715,7 @@ export default function POSPage() {
             <button onClick={parkTransaction} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
               <span className="block text-[10px] text-amber-400 font-bold">Alt + F4</span> Park Txn
             </button>
-            <button onClick={() => setShowParkedModal(true)} className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 p-3 rounded-xl text-xs font-semibold text-center border border-amber-500/30 relative">
+            <button onClick={() => setShowParkedModal(true)} className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 p-3 rounded-xl text-xs font-semibold text-center border border-slate-500/30 relative">
               <span className="block text-[10px] text-amber-400 font-bold">Parked List</span> View ({parkedTransactions.length})
             </button>
             <button onClick={fetchJournals} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
