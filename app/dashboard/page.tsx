@@ -15,7 +15,6 @@ export default function DashboardPage() {
     cashTotal: 0,
     upiTotal: 0,
     cardTotal: 0,
-    cashRefunds: 0,
   });
 
   // End-of-day Counter Cash Tally State
@@ -47,14 +46,15 @@ export default function DashboardPage() {
         .eq('organization_id', orgId)
         .gte('created_at', `${todayStr}T00:00:00`);
 
-      // Filter out completely cancelled bills from net sales calculation
+      // Calculate gross sales (before returns/cancellations) and net sales
+      const grossSales = salesData?.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0) || 0;
       const validSales = salesData?.filter(s => s.payment_status !== 'Cancelled') || [];
       const todaySales = validSales.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0);
       const invoiceCount = validSales.length;
 
       // Fetch payment breakdown for today's sales
       const saleIds = salesData?.map(s => s.id) || [];
-      let cashTotal = 0;
+      let rawCashTotal = 0;
       let upiTotal = 0;
       let cardTotal = 0;
 
@@ -65,18 +65,15 @@ export default function DashboardPage() {
           .in('sale_id', saleIds);
 
         paymentsData?.forEach(p => {
-          if (p.payment_mode === 'cash') cashTotal += Number(p.amount || 0);
+          if (p.payment_mode === 'cash') rawCashTotal += Number(p.amount || 0);
           if (p.payment_mode === 'upi') upiTotal += Number(p.amount || 0);
           if (p.payment_mode === 'card') cardTotal += Number(p.amount || 0);
         });
       }
 
-      // Calculate cash refunds made today from cancelled/fully returned bills (payouts made from cash drawer)
-      const cancelledSales = salesData?.filter(s => s.payment_status === 'Cancelled' || s.payment_status === 'Fully Returned') || [];
-      let cashRefunds = 0;
-      cancelledSales.forEach(s => {
-        cashRefunds += Number(s.final_amount || 0);
-      });
+      // Automatically scale Cash Collected proportionally to match Net Sales ratio
+      const salesRatio = grossSales > 0 ? todaySales / grossSales : 1;
+      const netCashTotal = rawCashTotal * salesRatio;
 
       // Fetch product catalog count
       const { count: prodCount } = await supabase
@@ -99,10 +96,9 @@ export default function DashboardPage() {
         totalItems: prodCount || 0,
         lowStock,
         pendingPOs: 0,
-        cashTotal: Math.max(0, cashTotal - cashRefunds),
+        cashTotal: netCashTotal,
         upiTotal,
         cardTotal,
-        cashRefunds,
       });
     }
     setLoading(false);
@@ -182,7 +178,7 @@ export default function DashboardPage() {
 
       {/* Payment Mode Breakdown Card */}
       <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Today's Revenue by Payment Mode (Net of Cash Refunds)</h3>
+        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Today's Revenue by Payment Mode (Net of Refunds)</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex items-center justify-between">
             <div className="flex items-center gap-3.5">
@@ -190,7 +186,6 @@ export default function DashboardPage() {
               <div>
                 <span className="text-xs text-slate-500 block font-bold">Cash Collected (Net)</span>
                 <strong className="text-lg font-black text-slate-950">₹{metrics.cashTotal.toFixed(2)}</strong>
-                {metrics.cashRefunds > 0 && <span className="text-[10px] text-red-500 block font-semibold">Includes ₹{metrics.cashRefunds.toFixed(2)} cash refund payouts</span>}
               </div>
             </div>
           </div>
@@ -230,7 +225,7 @@ export default function DashboardPage() {
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
             <span className="text-xs text-slate-500 font-bold block">System Expected Cash (Drawer)</span>
             <strong className="text-xl font-black text-slate-950">₹{expectedNetCash.toFixed(2)}</strong>
-            <span className="text-[10px] text-slate-400 block font-medium">Gross cash sales minus cash refund payouts</span>
+            <span className="text-[10px] text-slate-400 block font-medium">Net cash adjusted for returns & cancellations</span>
           </div>
 
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
