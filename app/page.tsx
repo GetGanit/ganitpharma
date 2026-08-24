@@ -1,10 +1,8 @@
 'use client';
 import { useState } from 'react';
-import { ArrowRight, ShieldCheck, Zap, Package, FileText, CheckCircle2, ChevronDown, Sparkles } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Zap, Package, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function LandingPage() {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-brand-yellow selection:text-slate-950">
       
@@ -28,7 +26,6 @@ export default function LandingPage() {
           <a href="#features" className="hover:text-white transition">Features</a>
           <a href="#pricing" className="hover:text-white transition">Pricing</a>
           <a href="#security" className="hover:text-white transition">Security & RLS</a>
-          <a href="#faq" className="hover:text-white transition">FAQ</a>
         </nav>
 
         <div className="flex items-center gap-4">
@@ -140,7 +137,7 @@ export default function LandingPage() {
             <div className="pt-6">
               <a
                 href="/onboarding"
-                className="block w-full sm:w-auto text-center bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-extrabold py-4 px-8 rounded-xl shadow-lg transition"
+                className="block sm:inline-block text-center bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-extrabold py-4 px-8 rounded-xl shadow-lg transition"
               >
                 Get GanitPharma Now
               </a>
