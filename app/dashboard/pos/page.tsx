@@ -24,8 +24,9 @@ export default function POSPage() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // Inline Quantities per Search Suggestion Item (default to 1)
+  // Inline Quantities and Refs per Search Suggestion Item
   const [suggestionQtys, setSuggestionQtys] = useState<{ [productId: string]: number | string }>({});
+  const qtyInputRefs = useRef<{ [productId: string]: HTMLInputElement | null }>({});
 
   // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
@@ -84,7 +85,6 @@ export default function POSPage() {
         e.preventDefault();
         fetchJournals();
       } else if (e.key === 'Escape') {
-        // Close all modals on ESC
         setShowParkedModal(false);
         setShowInventoryModal(false);
         setShowJournalsModal(false);
@@ -154,7 +154,6 @@ export default function POSPage() {
         setProducts(data || []);
         setSelectedIndex(0);
 
-        // Initialize suggestion quantities to 1
         const initQtys: { [id: string]: number } = {};
         data?.forEach((p: any) => {
           initQtys[p.id] = 1;
@@ -166,7 +165,7 @@ export default function POSPage() {
     return () => clearTimeout(timer);
   }, [searchQuery, supabase]);
 
-  // Handle Keyboard Navigation (Arrow Down / Up / Enter) in Search Input
+  // Handle Keyboard Navigation: Enter 1st time focuses Qty field, Enter 2nd time adds to cart
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (products.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -180,10 +179,20 @@ export default function POSPage() {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         const prod = products[selectedIndex];
-        if (prod && prod.product_batches && prod.product_batches.length > 0) {
-          const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
-          const qty = Number(suggestionQtys[prod.id]) || 1;
-          addToCart(prod, sortedBatches[0], qty);
+        if (prod) {
+          const qtyInputEl = qtyInputRefs.current[prod.id];
+          // If Qty input is not currently focused, focus it first
+          if (document.activeElement !== qtyInputEl) {
+            qtyInputEl?.focus();
+            qtyInputEl?.select();
+          } else {
+            // If already focused on Qty, pressing Enter adds it to cart!
+            if (prod.product_batches && prod.product_batches.length > 0) {
+              const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
+              const qty = Number(suggestionQtys[prod.id]) || 1;
+              addToCart(prod, sortedBatches[0], qty);
+            }
+          }
         }
         return;
       }
@@ -390,7 +399,7 @@ export default function POSPage() {
     }
   };
 
-  // Financial Calculations with Proportional Overall Discount Distribution
+  // Financial Calculations
   const grossTotalWithoutAnyDiscounts = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
@@ -808,16 +817,24 @@ export default function POSPage() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        {/* Qty Field before MRP badge */}
+                        {/* Qty Field before MRP badge without spin arrows */}
                         <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-sm">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Qty</span>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">QTY</span>
                           <input
+                            ref={(el) => (qtyInputRefs.current[prod.id] = el)}
                             type="number"
                             min="1"
                             value={suggestionQtys[prod.id] ?? 1}
                             onClick={(e) => e.stopPropagation()}
                             onChange={(e) => setSuggestionQtys({ ...suggestionQtys, [prod.id]: e.target.value })}
-                            className="w-12 text-center font-black text-xs text-slate-950 bg-slate-50 rounded-lg py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const qty = Number(suggestionQtys[prod.id]) || 1;
+                                if (nearestBatch) addToCart(prod, nearestBatch, qty);
+                              }
+                            }}
+                            className="w-12 text-center font-black text-xs text-slate-950 bg-slate-50 rounded-lg py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
 
