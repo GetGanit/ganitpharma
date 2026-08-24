@@ -7,7 +7,8 @@ import {
   Search, 
   Trash2, 
   CheckCircle2, 
-  AlertCircle
+  AlertCircle,
+  Package
 } from 'lucide-react';
 
 interface CartItem {
@@ -41,9 +42,12 @@ export default function POSPage() {
   const [splitUpi, setSplitUpi] = useState<number | string>(0);
   const [splitCard, setSplitCard] = useState<number | string>(0);
 
-  // Parked Transactions
+  // Parked & Inventory Modal States
   const [parkedTransactions, setParkedTransactions] = useState<any[]>([]);
   const [showParkedModal, setShowParkedModal] = useState(false);
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
+  const [inventoryList, setInventoryList] = useState<any[]>([]);
+  const [inventorySearch, setInventorySearch] = useState('');
 
   // Modals
   const [showJournalsModal, setShowJournalsModal] = useState(false);
@@ -144,6 +148,22 @@ export default function POSPage() {
     }
   }
 
+  async function openInventoryCheck() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const orgId = user.user_metadata?.organization_id;
+
+    if (orgId) {
+      const { data } = await supabase
+        .from('products')
+        .select('*, product_batches(*)')
+        .eq('organization_id', orgId);
+
+      if (data) setInventoryList(data);
+      setShowInventoryModal(true);
+    }
+  }
+
   const addToCart = (product: any, batch: any) => {
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
@@ -182,6 +202,7 @@ export default function POSPage() {
     }
     setSearchQuery('');
     setProducts([]);
+    setShowInventoryModal(false);
     searchInputRef.current?.focus();
   };
 
@@ -688,7 +709,7 @@ export default function POSPage() {
             <button onClick={fetchJournals} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
               <span className="block text-[10px] text-amber-400 font-bold">F1</span> Show Journals
             </button>
-            <button onClick={() => router.push('/dashboard/inventory')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
+            <button onClick={openInventoryCheck} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
               <span className="block text-[10px] text-amber-400 font-bold">Alt + F2</span> Inventory Check
             </button>
             <button 
@@ -751,6 +772,52 @@ export default function POSPage() {
         </div>
 
       </div>
+
+      {/* Inventory Check Modal (Pops up inside POS without clearing cart) */}
+      {showInventoryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Package className="w-5 h-5 text-amber-500" /> Live Inventory Check
+              </h3>
+              <button onClick={() => setShowInventoryModal(false)} className="text-slate-500 hover:text-slate-900 font-bold">✕</button>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Search available medicine stock..."
+              value={inventorySearch}
+              onChange={(e) => setInventorySearch(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm"
+            />
+
+            <div className="max-h-96 overflow-y-auto space-y-2">
+              {inventoryList
+                .filter(p => p.product_name.toLowerCase().includes(inventorySearch.toLowerCase()))
+                .map((prod) => (
+                  <div key={prod.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2">
+                    <div className="flex justify-between font-bold text-slate-900 text-sm">
+                      <span>{prod.product_name}</span>
+                      <span className="text-slate-500 text-xs">Brand: {prod.brand || 'N/A'}</span>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {prod.product_batches?.map((batch: any) => (
+                        <button
+                          key={batch.id}
+                          onClick={() => addToCart(prod, batch)}
+                          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow"
+                        >
+                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty} (Click to Add)
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Parked Transactions Modal */}
       {showParkedModal && (
