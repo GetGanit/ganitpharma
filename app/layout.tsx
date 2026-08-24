@@ -1,5 +1,4 @@
 import './globals.css';
-import { Metadata } from 'net';
 
 export const metadata = {
   title: 'GanitPharma - Enterprise Pharmacy OS',
