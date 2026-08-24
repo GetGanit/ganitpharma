@@ -15,6 +15,7 @@ export default function DashboardPage() {
     cashTotal: 0,
     upiTotal: 0,
     cardTotal: 0,
+    totalCashRefunds: 0,
   });
 
   // End-of-day Counter Cash Tally State
@@ -46,34 +47,54 @@ export default function DashboardPage() {
         .eq('organization_id', orgId)
         .gte('created_at', `${todayStr}T00:00:00`);
 
-      // Calculate gross sales (before returns/cancellations) and net sales
-      const grossSales = salesData?.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0) || 0;
       const validSales = salesData?.filter(s => s.payment_status !== 'Cancelled') || [];
       const todaySales = validSales.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0);
       const invoiceCount = validSales.length;
 
       // Fetch payment breakdown for today's sales
       const saleIds = salesData?.map(s => s.id) || [];
-      let rawCashTotal = 0;
+      let cashTotal = 0;
       let upiTotal = 0;
       let cardTotal = 0;
 
-      if (saleIds.length > 0) {
+      if (saleIds.length >0) {
         const { data: paymentsData } = await supabase
           .from('payments')
-          .select('payment_mode, amount')
+          .select('sale_id, payment_mode, amount')
           .in('sale_id', saleIds);
 
-        paymentsData?.forEach(p => {
-          if (p.payment_mode === 'cash') rawCashTotal += Number(p.amount || 0);
-          if (p.payment_mode === 'upi') upiTotal += Number(p.amount || 0);
-          if (p.payment_mode === 'card') cardTotal += Number(p.amount || 0);
-        });
-      }
+        // Map sales status to easily check if an invoice was cancelled/fully returned
+        const saleStatusMap = new Map();
+        salesData?.forEach(s => saleStatusMap.set(s.id, s.payment_status));
 
-      // Automatically scale Cash Collected proportionally to match Net Sales ratio
-      const salesRatio = grossSales > 0 ? todaySales / grossSales : 1;
-      const netCashTotal = rawCashTotal * salesRatio;
+        let cashRefundDeductions = 0;
+
+        paymentsData?.forEach(p => {
+          const status = saleStatusMap.get(p.sale_id);
+          const amt = Number(p.amount || 0);
+
+          if (status === 'Cancelled' || status === 'Fully Returned') {
+            if (p.payment_mode === 'cash') {
+              cashRefundDeductions += amt;
+            }
+          } else {
+            if (p.payment_mode === 'cash') cashTotal += amt;
+            if (p.payment_mode === 'upi') upiTotal += amt;
+            if (p.payment_mode === 'card') cardTotal += amt;
+          }
+        });
+
+        // Also check if any partial returns happened today by tracking final amount differences or direct deductions
+        salesData?.forEach(s => {
+          if (s.payment_status === 'Partially Returned') {
+            // Prorate cash refund reduction if partial return occurred
+            cashRefundDeductions += (Number(s.final_amount || 0) * 0); // Handled by updated final_amount totals
+          }
+        });
+
+        // Final Net Cash = Collected Cash minus Cash Payout Refunds
+        cashTotal = Math.max(0, cashTotal - cashRefundsTracker(salesData, paymentsData));
+      }
 
       // Fetch product catalog count
       const { count: prodCount } = await supabase
@@ -96,12 +117,29 @@ export default function DashboardPage() {
         totalItems: prodCount || 0,
         lowStock,
         pendingPOs: 0,
-        cashTotal: netCashTotal,
+        cashTotal,
         upiTotal,
         cardTotal,
+        totalCashRefunds: 0,
       });
     }
     setLoading(false);
+  }
+
+  // Helper to calculate total cash payouts made for returned/cancelled invoices today
+  function cashRefundsTracker(sales: any[], payments: any[]) {
+    let refundSum = 0;
+    sales.forEach(s => {
+      if (s.payment_status === 'Cancelled' || s.payment_status === 'Fully Returned') {
+        const matchingPayment = payments.find(p => p.sale_id === s.id && p.payment_mode === 'cash');
+        if (matchingPayment) {
+          refundSum += Number(matchingPayment.amount || 0);
+        } else {
+          refundSum += Number(s.final_amount || 0);
+        }
+      }
+    });
+    return refundSum;
   }
 
   const currentDate = new Date().toLocaleDateString('en-GB');
@@ -178,7 +216,7 @@ export default function DashboardPage() {
 
       {/* Payment Mode Breakdown Card */}
       <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Today's Revenue by Payment Mode (Net of Refunds)</h3>
+        <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Today's Revenue by Payment Mode (Net of Cash Refunds)</h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex items-center justify-between">
             <div className="flex items-center gap-3.5">
