@@ -24,6 +24,9 @@ export default function POSPage() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
   
+  // Inline Quantities per Search Suggestion Item (default to 1)
+  const [suggestionQtys, setSuggestionQtys] = useState<{ [productId: string]: number | string }>({});
+
   // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -71,6 +74,7 @@ export default function POSPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  // Keyboard Shortcuts (F2, F1, and ESC to close modals)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -79,6 +83,14 @@ export default function POSPage() {
       } else if (e.key === 'F1') {
         e.preventDefault();
         fetchJournals();
+      } else if (e.key === 'Escape') {
+        // Close all modals on ESC
+        setShowParkedModal(false);
+        setShowInventoryModal(false);
+        setShowJournalsModal(false);
+        setDiscountModalIndex(null);
+        setReturnModalInvoice(null);
+        setSelectedInvoice(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -141,6 +153,13 @@ export default function POSPage() {
 
         setProducts(data || []);
         setSelectedIndex(0);
+
+        // Initialize suggestion quantities to 1
+        const initQtys: { [id: string]: number } = {};
+        data?.forEach((p: any) => {
+          initQtys[p.id] = 1;
+        });
+        setSuggestionQtys(initQtys);
       }
     }
     const timer = setTimeout(searchProducts, 300);
@@ -163,12 +182,8 @@ export default function POSPage() {
         const prod = products[selectedIndex];
         if (prod && prod.product_batches && prod.product_batches.length > 0) {
           const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
-          
-          // Prompt for initial quantity before adding
-          const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
-          const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
-
-          addToCart(prod, sortedBatches[0], initialQty);
+          const qty = Number(suggestionQtys[prod.id]) || 1;
+          addToCart(prod, sortedBatches[0], qty);
         }
         return;
       }
@@ -255,7 +270,7 @@ export default function POSPage() {
       return;
     }
 
-    const addQty = customQty || 1;
+    const addQty = customQty || Number(suggestionQtys[product.id]) || 1;
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
     const sellingPrice = batch.mrp || batch.selling_rate || 100;
@@ -503,7 +518,6 @@ export default function POSPage() {
       const itemDisc = gross * ((item.discount_percent || 0) / 100);
       let itemNet = gross - itemDisc;
       
-      // Proportionally distribute overall bill discount to each item so math matches unit price * qty minus discount
       if (rawSubtotal > 0 && overallDiscNum > 0) {
         const proportion = itemNet / rawSubtotal;
         itemNet -= overallDiscVal * proportion;
@@ -736,7 +750,7 @@ export default function POSPage() {
             <span>Store:</span> <strong className="text-slate-900">Bangalore Hub</strong>
           </div>
           <div className="flex justify-between text-slate-500">
-            <span>Shortcut:</span> <strong className="text-amber-600">F2 (Search) | F1 (Journals)</strong>
+            <span>Shortcut:</span> <strong className="text-amber-600">F2 (Search) | F1 (Journals) | ESC (Close)</strong>
           </div>
         </div>
       </div>
@@ -756,7 +770,7 @@ export default function POSPage() {
             </div>
           )}
 
-          {/* Search Bar with Keyboard Navigation */}
+          {/* Search Bar with Keyboard Navigation & Inline Qty Field */}
           <div className="bg-white p-3 rounded-2xl border border-slate-200 relative shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
@@ -766,13 +780,13 @@ export default function POSPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                placeholder="Scan Barcode or Search Medicine Name (Use Arrow Keys & Enter)..."
+                placeholder="Scan Barcode or Search Medicine Name (Use Arrow Down/Up & Enter)..."
                 className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none text-sm"
               />
             </div>
 
             {products.length > 0 && (
-              <div className="absolute left-3 right-3 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 max-h-72 overflow-y-auto divide-y divide-slate-100">
+              <div className="absolute left-3 right-3 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 max-h-80 overflow-y-auto divide-y divide-slate-100">
                 {products.map((prod, idx) => {
                   const batches = prod.product_batches || [];
                   const sortedBatches = [...batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
@@ -782,14 +796,9 @@ export default function POSPage() {
                   return (
                     <div 
                       key={prod.id} 
-                      onClick={() => {
-                        const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
-                        const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
-                        if (nearestBatch) addToCart(prod, nearestBatch, initialQty);
-                      }}
-                      className={`p-3.5 transition cursor-pointer flex justify-between items-center ${isSelected ? 'bg-amber-100/80 border-l-4 border-amber-500' : 'hover:bg-amber-50/50'}`}
+                      className={`p-3.5 transition flex justify-between items-center ${isSelected ? 'bg-amber-100/90 border-l-4 border-amber-500' : 'hover:bg-amber-50/50'}`}
                     >
-                      <div>
+                      <div className="flex-1">
                         <div className="font-black text-slate-950 text-sm">{prod.product_name}</div>
                         <div className="text-xs text-slate-500 mt-1 flex gap-4 font-medium">
                           <span>Brand: {prod.brand || 'N/A'}</span>
@@ -797,11 +806,35 @@ export default function POSPage() {
                           <span>Pack Size: {prod.units_per_pack || 15} units</span>
                         </div>
                       </div>
-                      {nearestBatch && (
-                        <div className="bg-amber-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-sm">
-                          MRP: ₹{nearestBatch.mrp} | Stock: {nearestBatch.stock_qty} (Press Enter)
+
+                      <div className="flex items-center gap-3">
+                        {/* Qty Field before MRP badge */}
+                        <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-sm">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Qty</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={suggestionQtys[prod.id] ?? 1}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setSuggestionQtys({ ...suggestionQtys, [prod.id]: e.target.value })}
+                            className="w-12 text-center font-black text-xs text-slate-950 bg-slate-50 rounded-lg py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                          />
                         </div>
-                      )}
+
+                        {nearestBatch && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const qty = Number(suggestionQtys[prod.id]) || 1;
+                              addToCart(prod, nearestBatch, qty);
+                            }}
+                            className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-3.5 py-2.5 rounded-xl shadow-sm transition cursor-pointer"
+                          >
+                            MRP: ₹{nearestBatch.mrp} | Stock: {nearestBatch.stock_qty} (Add)
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -849,7 +882,6 @@ export default function POSPage() {
                       const gross = perUnitPrice * qtyNum;
                       let discAmt = gross * ((item.discount_percent || 0) / 100);
                       
-                      // Factor in overall proportional discount for accurate row representation
                       if (rawSubtotal > 0 && overallDiscNum > 0) {
                         const itemGrossNet = gross - discAmt;
                         const propShare = itemGrossNet / rawSubtotal;
@@ -1100,11 +1132,7 @@ export default function POSPage() {
                       {prod.product_batches?.map((batch: any) => (
                         <button
                           key={batch.id}
-                          onClick={() => {
-                            const initialQtyStr = prompt(`Enter quantity for ${prod.product_name}:`, '1');
-                            const initialQty = parseInt(initialQtyStr || '1', 10) || 1;
-                            addToCart(prod, batch, initialQty);
-                          }}
+                          onClick={() => addToCart(prod, batch, 1)}
                           className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-sm transition"
                         >
                           Batch: {batch.batch_number} | Exp: {batch.expiry_date} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty} (Click to Add)
