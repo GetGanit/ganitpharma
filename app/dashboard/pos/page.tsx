@@ -7,11 +7,19 @@ import {
   Search, 
   Trash2, 
   CheckCircle2, 
-  ArrowLeft,
   CreditCard,
   Banknote,
   Smartphone,
-  AlertCircle
+  AlertCircle,
+  LayoutDashboard,
+  ShoppingCart,
+  Package,
+  Truck,
+  FileText,
+  Users,
+  BarChart3,
+  ShieldCheck,
+  Settings
 } from 'lucide-react';
 
 interface CartItem {
@@ -23,7 +31,6 @@ interface CartItem {
   gst_percentage: number;
   quantity: number;
   pack_size: number;
-  is_loose: boolean;
   available_qty: number;
 }
 
@@ -42,7 +49,6 @@ export default function POSPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Keyboard shortcut listener (F2 for search focus)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -54,7 +60,6 @@ export default function POSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Search products in inventory
   useEffect(() => {
     async function searchProducts() {
       if (!searchQuery.trim()) {
@@ -65,7 +70,6 @@ export default function POSPage() {
       if (!user) return;
 
       const orgId = user.user_metadata?.organization_id;
-
       if (orgId) {
         const { data } = await supabase
           .from('products')
@@ -83,14 +87,14 @@ export default function POSPage() {
 
   const addToCart = (product: any, batch: any) => {
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
-    const packSize = product.units_per_pack || 10;
+    const packSize = product.units_per_pack || 15;
     const sellingPrice = batch.selling_rate || 100;
     const availableQty = batch.stock_qty || 0;
 
     if (existingIndex > -1) {
       const updated = [...cart];
       if (updated[existingIndex].quantity + 1 > availableQty) {
-        alert(`Stock limit reached! Only ${availableQty} units available in batch ${batch.batch_number}.`);
+        alert(`Stock limit reached! Only ${availableQty} units available.`);
         return;
       }
       updated[existingIndex].quantity += 1;
@@ -111,7 +115,6 @@ export default function POSPage() {
           gst_percentage: product.gst_rate || 12,
           quantity: 1,
           pack_size: packSize,
-          is_loose: false,
           available_qty: availableQty,
         },
       ]);
@@ -124,7 +127,7 @@ export default function POSPage() {
   const updateQuantity = (index: number, qty: number) => {
     if (qty <= 0) return;
     if (qty > cart[index].available_qty) {
-      alert(`Insufficient stock! Only ${cart[index].available_qty} units available for this batch.`);
+      alert(`Insufficient stock! Only ${cart[index].available_qty} units available.`);
       return;
     }
     const updated = [...cart];
@@ -133,19 +136,18 @@ export default function POSPage() {
   };
 
   const removeItem = (index: number) => {
-    const updated = cart.filter((_, i) => i !== index);
-    setCart(updated);
+    setCart(cart.filter((_, i) => i !== index));
   };
 
-  // Financial Calculations
+  // Financial Calculations & Auto Loose/Full Unit Breakdown
   const subtotal = cart.reduce((acc, item) => {
-    const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
-    return acc + unitPrice * item.quantity;
+    const perUnitPrice = item.selling_price / item.pack_size;
+    return acc + (perUnitPrice * item.quantity);
   }, 0);
 
   const totalGST = cart.reduce((acc, item) => {
-    const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
-    const itemTotal = unitPrice * item.quantity;
+    const perUnitPrice = item.selling_price / item.pack_size;
+    const itemTotal = perUnitPrice * item.quantity;
     return acc + (itemTotal * item.gst_percentage) / (100 + item.gst_percentage);
   }, 0);
 
@@ -170,7 +172,6 @@ export default function POSPage() {
       return;
     }
 
-    // 1. Create Customer if provided
     let customerId = null;
     if (customerPhone) {
       const { data: existingCust } = await supabase
@@ -185,17 +186,15 @@ export default function POSPage() {
       } else {
         const { data: newCust } = await supabase
           .from('customers')
-          .insert([{ organization_id: orgId, customer_name: customerName || 'Walk-in Customer', phone: customerPhone }])
+          .insert([{ organization_id: orgId, customer_name: customerName || 'Retail Customer', phone: customerPhone }])
           .select('id')
           .single();
         if (newCust) customerId = newCust.id;
       }
     }
 
-    // 2. Generate Invoice Number
     const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // 3. Insert Sale Record
     const { data: saleData, error: saleError } = await supabase
       .from('sales')
       .insert([{
@@ -216,11 +215,9 @@ export default function POSPage() {
       return;
     }
 
-    // 4. Insert Sale Items & Deduct Stock Atomically
     for (const item of cart) {
-      const unitPrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
+      const perUnitPrice = item.selling_price / item.pack_size;
       
-      // Get batch id
       const { data: batchData } = await supabase
         .from('product_batches')
         .select('id, stock_qty')
@@ -236,12 +233,11 @@ export default function POSPage() {
           product_id: item.id,
           batch_id: batchData.id,
           quantity_sold: item.quantity,
-          unit_price: unitPrice,
+          unit_price: perUnitPrice,
           gst_percent: item.gst_percentage,
-          total_price: unitPrice * item.quantity
+          total_price: perUnitPrice * item.quantity
         }]);
 
-        // Deduct inventory stock
         await supabase
           .from('product_batches')
           .update({ stock_qty: Math.max(0, batchData.stock_qty - item.quantity) })
@@ -249,7 +245,6 @@ export default function POSPage() {
       }
     }
 
-    // 5. Insert Payment record
     await supabase.from('payments').insert([{
       sale_id: saleData.id,
       organization_id: orgId,
@@ -265,223 +260,257 @@ export default function POSPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      <header className="h-16 bg-slate-900 text-white px-6 flex items-center justify-between border-b border-slate-800">
-        <div className="flex items-center gap-4">
-          <a href="/dashboard" className="text-slate-400 hover:text-white transition flex items-center gap-1 text-xs font-medium">
-            <ArrowLeft className="w-4 h-4" /> Exit POS
-          </a>
-          <span className="text-lg font-bold">Ganit<span className="text-amber-400">Pharma</span> POS</span>
+    <div className="min-h-screen bg-slate-100 flex">
+      {/* Persistent Sidebar */}
+      <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 shrink-0 hidden md:flex">
+        <div>
+          <div className="h-16 px-6 flex items-center border-b border-slate-800">
+            <span className="text-lg font-bold text-white">Ganit<span className="text-amber-400">Pharma</span></span>
+          </div>
+          <nav className="p-4 space-y-1 text-sm font-medium">
+            <a href="/dashboard" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <LayoutDashboard className="w-5 h-5" /> Dashboard
+            </a>
+            <a href="/dashboard/pos" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-400/10 text-amber-400 font-bold">
+              <ShoppingCart className="w-5 h-5" /> Billing / POS
+            </a>
+            <a href="/dashboard/inventory" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <Package className="w-5 h-5" /> Inventory
+            </a>
+            <a href="/dashboard/purchases" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <Truck className="w-5 h-5" /> Purchases
+            </a>
+            <a href="/dashboard/invoices" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <FileText className="w-5 h-5" /> Invoices
+            </a>
+            <a href="/dashboard/crm" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <Users className="w-5 h-5" /> Customers
+            </a>
+            <a href="/dashboard/reports" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <BarChart3 className="w-5 h-5" /> Reports
+            </a>
+            <a href="/dashboard/compliance" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <ShieldCheck className="w-5 h-5" /> Compliance
+            </a>
+            <a href="/dashboard/settings" className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-400">
+              <Settings className="w-5 h-5" /> Settings
+            </a>
+          </nav>
         </div>
-        <div className="flex items-center gap-4 text-xs">
-          <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
-            Shortcut: <strong className="text-amber-400">F2</strong> to Search
-          </span>
-          <span className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
-            Tenant Isolated Session
-          </span>
-        </div>
-      </header>
+      </aside>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-[1600px] w-full mx-auto">
-        <div className="lg:col-span-2 flex flex-col space-y-4">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-          {successMsg && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span className="font-bold">{successMsg}</span>
-            </div>
-          )}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
+          <span className="text-lg font-bold text-slate-900">POS Billing Workspace</span>
+          <div className="text-xs bg-slate-100 px-3 py-1.5 rounded-lg text-slate-600 font-semibold">
+            Press <strong className="text-amber-600">F2</strong> to focus barcode scanner / search
+          </div>
+        </header>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
-            <div className="relative">
-              <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Scan Barcode or Search Medicine Name (Press F2)..."
-                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none"
-              />
-            </div>
-
-            {products.length > 0 && (
-              <div className="absolute left-4 right-4 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-80 overflow-y-auto divide-y divide-slate-100">
-                {products.map((prod) => (
-                  <div key={prod.id} className="p-3 hover:bg-amber-50/50 transition">
-                    <div className="font-bold text-slate-900 text-sm">{prod.product_name}</div>
-                    <div className="text-xs text-slate-500 mt-1 flex gap-4">
-                      <span>Brand: {prod.brand || 'N/A'}</span>
-                      <span>GST: {prod.gst_rate}%</span>
-                      <span>Pack: {prod.pack_size}</span>
-                    </div>
-                    <div className="mt-2 flex gap-2 flex-wrap">
-                      {prod.product_batches?.map((batch: any) => (
-                        <button
-                          key={batch.id}
-                          onClick={() => addToCart(prod, batch)}
-                          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm"
-                        >
-                          Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-[1600px] w-full mx-auto">
+          <div className="lg:col-span-2 flex flex-col space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
-          </div>
+            {successMsg && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span className="font-bold">{successMsg}</span>
+              </div>
+            )}
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-slate-200 font-bold text-slate-900 flex justify-between items-center">
-              <span>Billing Cart ({cart.length} items)</span>
-              <span className="text-xs text-slate-500 font-normal">FEFO Auto-Batch Applied</span>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4">
-              {cart.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16">
-                  <Receipt className="w-12 h-12 mb-3 stroke-1" />
-                  <p className="text-sm font-medium">Cart is empty. Scan barcode or search above.</p>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+              <div className="relative">
+                <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Scan Barcode or Search Medicine Name (Press F2)..."
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+              </div>
+
+              {products.length > 0 && (
+                <div className="absolute left-4 right-4 mt-2 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-80 overflow-y-auto divide-y divide-slate-100">
+                  {products.map((prod) => (
+                    <div key={prod.id} className="p-3 hover:bg-amber-50/50 transition">
+                      <div className="font-bold text-slate-900 text-sm">{prod.product_name}</div>
+                      <div className="text-xs text-slate-500 mt-1 flex gap-4">
+                        <span>Brand: {prod.brand || 'N/A'}</span>
+                        <span>GST: {prod.gst_rate}%</span>
+                        <span>Pack Size: {prod.units_per_pack || 15} units</span>
+                      </div>
+                      <div className="mt-2 flex gap-2 flex-wrap">
+                        {prod.product_batches?.map((batch: any) => (
+                          <button
+                            key={batch.id}
+                            onClick={() => addToCart(prod, batch)}
+                            className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg shadow-sm"
+                          >
+                            Batch: {batch.batch_number} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase text-slate-400 border-b border-slate-100">
-                    <tr>
-                      <th className="pb-3 font-semibold">Item Name</th>
-                      <th className="pb-3 font-semibold">Batch</th>
-                      <th className="pb-3 font-semibold">Type</th>
-                      <th className="pb-3 font-semibold">Qty</th>
-                      <th className="pb-3 font-semibold">Price</th>
-                      <th className="pb-3 font-semibold">Total</th>
-                      <th className="pb-3 text-right font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {cart.map((item, idx) => {
-                      const effectivePrice = item.is_loose ? item.selling_price / item.pack_size : item.selling_price;
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="py-3 font-semibold text-slate-900">{item.product_name}</td>
-                          <td className="py-3 text-slate-600 text-xs">{item.batch_number}</td>
-                          <td className="py-3">
-                            <button
-                              onClick={() => {
-                                const updated = [...cart];
-                                updated[idx].is_loose = !updated[idx].is_loose;
-                                setCart(updated);
-                              }}
-                              className={`text-xs px-2 py-1 rounded font-bold ${item.is_loose ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}
-                            >
-                              {item.is_loose ? `Loose` : 'Full Pack'}
-                            </button>
-                          </td>
-                          <td className="py-3">
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) => updateQuantity(idx, parseInt(e.target.value) || 1)}
-                              className="w-16 px-2 py-1 border border-slate-300 rounded text-center text-sm font-bold"
-                            />
-                            <span className="text-[10px] text-slate-400 block mt-0.5">Max: {item.available_qty}</span>
-                          </td>
-                          <td className="py-3 text-slate-600">₹{effectivePrice.toFixed(2)}</td>
-                          <td className="py-3 font-bold text-slate-900">₹{(effectivePrice * item.quantity).toFixed(2)}</td>
-                          <td className="py-3 text-right">
-                            <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700 p-1">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
               )}
             </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-slate-200 font-bold text-slate-900 flex justify-between items-center">
+                <span>Billing Cart ({cart.length} items)</span>
+                <span className="text-xs text-slate-500 font-normal">Automatic Full/Loose Unit Calculator Active</span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                {cart.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16">
+                    <Receipt className="w-12 h-12 mb-3 stroke-1" />
+                    <p className="text-sm font-medium">Cart is empty. Scan barcode or search above.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs uppercase text-slate-400 border-b border-slate-100">
+                      <tr>
+                        <th className="pb-3 font-semibold">Item Name</th>
+                        <th className="pb-3 font-semibold">Batch</th>
+                        <th className="pb-3 font-semibold">Unit Breakdown</th>
+                        <th className="pb-3 font-semibold">Qty (Tabs)</th>
+                        <th className="pb-3 font-semibold">Price/Tab</th>
+                        <th className="pb-3 font-semibold">Total</th>
+                        <th className="pb-3 text-right font-semibold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {cart.map((item, idx) => {
+                        const perUnitPrice = item.selling_price / item.pack_size;
+                        const fullPacks = Math.floor(item.quantity / item.pack_size);
+                        const looseTabs = item.quantity % item.pack_size;
+                        const breakdownText = fullPacks > 0 
+                          ? `${fullPackText(fullPacks, item.pack_size)}${looseTabs > 0 ? ` + ${looseTabs} loose` : ''}` 
+                          : `${item.quantity} loose tablets`;
+
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-3 font-semibold text-slate-900">{item.product_name}</td>
+                            <td className="py-3 text-slate-600 text-xs">{item.batch_number}</td>
+                            <td className="py-3">
+                              <span className="text-xs bg-amber-100 text-amber-900 px-2 py-1 rounded font-bold">
+                                {breakdownText}
+                              </span>
+                            </td>
+                            <td className="py-3">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => updateQuantity(idx, parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-1 border border-slate-300 rounded text-center text-sm font-bold"
+                              />
+                              <span className="text-[10px] text-slate-400 block mt-0.5">Max: {item.available_qty}</span>
+                            </td>
+                            <td className="py-3 text-slate-600">₹{perUnitPrice.toFixed(2)}</td>
+                            <td className="py-3 font-bold text-slate-900">₹{(perUnitPrice * item.quantity).toFixed(2)}</td>
+                            <td className="py-3 text-right">
+                              <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700 p-1">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between">
-          <div className="space-y-6">
-            <h3 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3">Checkout Summary</h3>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col justify-between">
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3">Checkout Summary</h3>
 
-            <div className="space-y-3">
-              <label className="block text-xs font-semibold text-slate-600 uppercase">Customer Information</label>
-              <input
-                type="text"
-                placeholder="Customer Phone (Primary ID)"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="Customer Name (Optional)"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
-              />
-            </div>
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-600 uppercase">Customer Information</label>
+                <input
+                  type="text"
+                  placeholder="Customer Phone (Primary ID)"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Customer Name (Optional)"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                />
+              </div>
 
-            <div className="space-y-3">
-              <label className="block text-xs font-semibold text-slate-600 uppercase">Payment Method</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setPaymentMethod('cash')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'cash' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
-                >
-                  <Banknote className="w-4 h-4" /> Cash
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('upi')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'upi' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
-                >
-                  <Smartphone className="w-4 h-4" /> UPI
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('card')}
-                  className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'card' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
-                >
-                  <CreditCard className="w-4 h-4" /> Card
-                </button>
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-600 uppercase">Payment Method</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setPaymentMethod('cash')}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'cash' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  >
+                    <Banknote className="w-4 h-4" /> Cash
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('upi')}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'upi' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  >
+                    <Smartphone className="w-4 h-4" /> UPI
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('card')}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-1 ${paymentMethod === 'card' ? 'bg-amber-50 border-amber-400 text-amber-900' : 'border-slate-200 text-slate-600'}`}
+                  >
+                    <CreditCard className="w-4 h-4" /> Card
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-2 text-sm">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span>₹{subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600 text-xs">
+                  <span>Included GST (Auto-calculated)</span>
+                  <span>₹{totalGST.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-extrabold text-slate-900 border-t border-slate-200 pt-3">
+                  <span>Final Payable</span>
+                  <span className="text-amber-700">₹{finalTotal.toFixed(2)}</span>
+                </div>
               </div>
             </div>
 
-            <div className="border-t border-slate-100 pt-4 space-y-2 text-sm">
-              <div className="flex justify-between text-slate-600">
-                <span>Subtotal</span>
-                <span>₹{subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600 text-xs">
-                <span>Included GST (Auto-calculated)</span>
-                <span>₹{totalGST.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-lg font-extrabold text-slate-900 border-t border-slate-200 pt-3">
-                <span>Final Payable</span>
-                <span className="text-amber-700">₹{finalTotal.toFixed(2)}</span>
-              </div>
+            <div className="space-y-3 pt-6">
+              <button
+                onClick={handleCompleteSale}
+                disabled={loading || cart.length === 0}
+                className="w-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold py-4 rounded-xl shadow-md transition text-base flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-5 h-5" /> {loading ? 'Processing Sale...' : 'Complete Sale & Print Invoice'}
+              </button>
             </div>
-          </div>
-
-          <div className="space-y-3 pt-6">
-            <button
-              onClick={handleCompleteSale}
-              disabled={loading || cart.length === 0}
-              className="w-full bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold py-4 rounded-xl shadow-md transition text-base flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-5 h-5" /> {loading ? 'Processing Sale...' : 'Complete Sale & Print Invoice'}
-            </button>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function fullPackText(packs: number, packSize: number) {
+  return `${packs} pack${packs > 1 ? 's' : ''} (${packs * packSize})`;
 }
