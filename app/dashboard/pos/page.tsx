@@ -37,7 +37,10 @@ export default function POSPage() {
   const [salesOrigin, setSalesOrigin] = useState('Regular sales');
   const [overallDiscount, setOverallDiscount] = useState<number>(0);
 
-  // Active Split Payment Inputs
+  // Single Mode Payment Button Selection ('cash' | 'upi' | 'card')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card'>('cash');
+
+  // Optional Split Payment Inputs
   const [splitCash, setSplitCash] = useState<number | string>(0);
   const [splitUpi, setSplitUpi] = useState<number | string>(0);
   const [splitCard, setSplitCard] = useState<number | string>(0);
@@ -77,10 +80,17 @@ export default function POSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Instant Customer Lookup & Auto-Population
+  // Instant Customer Lookup & Clean State Handling
   useEffect(() => {
     async function lookupCustomer() {
-      if (customerPhone.length !== 10) return;
+      if (customerPhone.length !== 10) {
+        if (customerPhone.length === 0) {
+          setCustomerName('');
+          setCustomerDOB('');
+        }
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const orgId = user.user_metadata?.organization_id;
@@ -95,16 +105,8 @@ export default function POSPage() {
 
         if (data) {
           setCustomerName(data.customer_name || '');
-          if (data.dob) setCustomerDOB(data.dob);
         } else {
-          // If customer doesn't exist yet, auto-register them immediately into the directory
-          await supabase.from('customers').insert([
-            {
-              organization_id: orgId,
-              phone: customerPhone,
-              customer_name: customerName || 'Retail Customer'
-            }
-          ]);
+          setCustomerName('');
         }
       }
     }
@@ -317,13 +319,30 @@ export default function POSPage() {
   }, 0);
 
   const finalTotal = subtotal;
-  const totalPaidSplit = (Number(splitCash) || 0) + (Number(splitUpi) || 0) + (Number(splitCard) || 0);
+  
+  // Split payment logic: optional. If split fields are empty/0, defaults to single paymentMode.
+  const cashVal = Number(splitCash) || 0;
+  const upiVal = Number(splitUpi) || 0;
+  const cardVal = Number(splitCard) || 0;
+  const totalPaidSplit = cashVal + upiVal + cardVal;
 
   const handleCompleteSale = async () => {
     if (cart.length === 0) return;
-    if (Math.abs(totalPaidSplit - finalTotal) > 1) {
-      alert(`Split payment total (₹${totalPaidSplit}) must match Final Payable (₹${finalTotal.toFixed(2)})!`);
-      return;
+
+    let finalCash = cashVal;
+    let finalUpi = upiVal;
+    let finalCard = cardVal;
+
+    // If no split payments were entered, automatically assign entire amount to single paymentMode button
+    if (totalPaidSplit === 0) {
+      if (paymentMode === 'cash') finalCash = finalTotal;
+      if (paymentMode === 'upi') finalUpi = finalTotal;
+      if (paymentMode === 'card') finalCard = finalTotal;
+    } else {
+      if (Math.abs(totalPaidSplit - finalTotal) > 1) {
+        alert(`Split payment total (₹${totalPaidSplit}) must match Final Payable (₹${finalTotal.toFixed(2)})!`);
+        return;
+      }
     }
 
     setLoading(true);
@@ -354,7 +373,6 @@ export default function POSPage() {
 
       if (existingCust) {
         customerId = existingCust.id;
-        // Update name if changed
         await supabase.from('customers').update({ customer_name: customerName || 'Retail Customer' }).eq('id', customerId);
       } else {
         const { data: newCust } = await supabase
@@ -425,14 +443,15 @@ export default function POSPage() {
       }
     }
 
-    if (Number(splitCash) > 0) {
-      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'cash', amount: Number(splitCash) }]);
+    // Insert payment records corresponding to modes used
+    if (finalCash > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'cash', amount: finalCash }]);
     }
-    if (Number(splitUpi) > 0) {
-      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'upi', amount: Number(splitUpi) }]);
+    if (finalUpi > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'upi', amount: finalUpi }]);
     }
-    if (Number(splitCard) > 0) {
-      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'card', amount: Number(splitCard) }]);
+    if (finalCard > 0) {
+      await supabase.from('payments').insert([{ sale_id: saleData.id, organization_id: orgId, payment_mode: 'card', amount: finalCard }]);
     }
 
     setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
@@ -705,7 +724,7 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Right Action Keypad & Active Split Payment Inputs */}
+        {/* Right Action Keypad & Optional Split Payment Inputs */}
         <div className="flex flex-col space-y-3">
           <div className="bg-slate-900 text-white p-2 rounded-xl text-center font-bold text-xs">
             POS Quick Actions
@@ -742,12 +761,42 @@ export default function POSPage() {
             </button>
           </div>
 
-          {/* Active Split Payment Inputs Box */}
+          {/* Single Payment Mode Selection Buttons */}
+          <div className="bg-white p-3 rounded-2xl border border-slate-300 space-y-2 shadow-sm">
+            <div className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1">
+              Primary Payment Mode
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('cash')}
+                className={`py-2 rounded-xl border text-center transition ${paymentMode === 'cash' ? 'bg-amber-400 border-amber-500 text-slate-950 shadow' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('upi')}
+                className={`py-2 rounded-xl border text-center transition ${paymentMode === 'upi' ? 'bg-amber-400 border-amber-500 text-slate-950 shadow' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+              >
+                UPI
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('card')}
+                className={`py-2 rounded-xl border text-center transition ${paymentMode === 'card' ? 'bg-amber-400 border-amber-500 text-slate-950 shadow' : 'bg-slate-50 border-slate-200 text-slate-600'}`}
+              >
+                Card
+              </button>
+            </div>
+          </div>
+
+          {/* Optional Split Payment Inputs Box */}
           <div className="bg-white p-3 rounded-2xl border border-slate-300 space-y-2 shadow-sm">
             <div className="flex justify-between items-center text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5">
-              <span>Split Payment Active</span>
-              <span className={`text-[10px] ${Math.abs(totalPaidSplit - finalTotal) <= 1 ? 'text-green-600' : 'text-red-600'}`}>
-                Paid: ₹{totalPaidSplit} / ₹{finalTotal.toFixed(0)}
+              <span>Optional Split Pay</span>
+              <span className={`text-[10px] ${totalPaidSplit === 0 || Math.abs(totalPaidSplit - finalTotal) <= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                {totalPaidSplit === 0 ? 'Single Mode Active' : `Paid: ₹${totalPaidSplit} / ₹${finalTotal.toFixed(0)}`}
               </span>
             </div>
             <div className="space-y-1.5 text-xs">
@@ -785,7 +834,7 @@ export default function POSPage() {
 
       </div>
 
-      {/* Inventory Check Modal (Pops up inside POS without clearing cart) */}
+      {/* Inventory Check Modal */}
       {showInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
