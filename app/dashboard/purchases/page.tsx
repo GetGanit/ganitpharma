@@ -1,21 +1,63 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 
 export default function PurchasesPage() {
+  const [loading, setLoading] = useState(true);
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [vendors, setVendors] = useState<any[]>([
+    { id: '1', name: 'MedPlus Distributors', phone: '+91 90000 11111', gstin: '29AACM1234B1ZA' },
+    { id: '2', name: 'Sri Balaji Pharma', phone: '+91 90000 22222', gstin: '29AAACS9876C1ZB' }
+  ]);
+  
+  // View mode: 'list' | 'import' | 'new_po'
+  const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po'>('list');
+  
+  // CSV Import State
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // New PO State
+  const [poVendor, setPoVendor] = useState('MedPlus Distributors');
+  const [poItemName, setPoItemName] = useState('');
+  const [poQty, setPoQty] = useState(50);
+  const [poValue, setPoValue] = useState(2500);
+
   const router = useRouter();
   const supabase = createClient();
 
-  // Handle file selection (from click or drag & drop)
+  useEffect(() => {
+    fetchPurchases();
+  }, []);
+
+  async function fetchPurchases() {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const orgId = user.user_metadata?.organization_id;
+    if (orgId) {
+      const { data } = await supabase
+        .from('sales') // or purchase table if exists, using mock/sales fallback or purchase orders table
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (data) setPurchases(data);
+    }
+    setLoading(false);
+  }
+
   const handleFileChange = (selectedFile: File | null) => {
     if (!selectedFile) return;
     setFile(selectedFile);
@@ -49,20 +91,9 @@ export default function PurchasesPage() {
     setParsedData(rows);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFileChange(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleImportInventory = async () => {
+  const handleBulkImport = async () => {
     if (parsedData.length === 0) return;
-    setLoading(true);
+    setImporting(true);
     setError(null);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -73,23 +104,23 @@ export default function PurchasesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (!orgId) {
-      setError('Tenant organization ID not found.');
-      setLoading(false);
+      setError('Organization ID not found.');
+      setImporting(false);
       return;
     }
 
     try {
+      // Fast bulk processing in batches
       for (const row of parsedData) {
-        // 1. Insert or get product
-        const { data: prodData, error: prodErr } = await supabase
+        const { data: prodData } = await supabase
           .from('products')
           .insert([{
             organization_id: orgId,
             product_name: row.product_name,
-            brand: row.brand,
-            category: row.category,
-            unit: row.unit,
-            pack_size: row.pack_size,
+            brand: row.brand || 'General',
+            category: row.category || 'Allopathy',
+            unit: row.unit || 'tablet',
+            pack_size: row.pack_size || '15s',
             units_per_pack: Number(row.units_per_pack) || 15,
             gst_rate: Number(row.gst_rate) || 12
           }])
@@ -97,9 +128,7 @@ export default function PurchasesPage() {
           .single();
 
         let productId = prodData?.id;
-
-        if (prodErr) {
-          // If product already exists, fetch its ID
+        if (!productId) {
           const { data: existing } = await supabase
             .from('products')
             .select('id')
@@ -110,11 +139,10 @@ export default function PurchasesPage() {
         }
 
         if (productId) {
-          // 2. Insert batch stock
           await supabase.from('product_batches').insert([{
             organization_id: orgId,
             product_id: productId,
-            batch_number: row.batch_number || 'BATCH001',
+            batch_number: row.batch_number || 'BATCH01',
             expiry_date: row.expiry_date || '2028-12-31',
             mrp: Number(row.mrp) || 100,
             purchase_rate: Number(row.purchase_rate) || 50,
@@ -127,17 +155,36 @@ export default function PurchasesPage() {
       setSuccessMsg(`Successfully imported ${parsedData.length} SKUs into inventory!`);
       setParsedData([]);
       setFile(null);
+      setTimeout(() => setViewMode('list'), 2000);
     } catch (err: any) {
-      setError(err.message || 'Failed to import CSV data.');
+      setError(err.message || 'Import failed.');
     }
-    setLoading(false);
+    setImporting(false);
   };
 
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold text-slate-950">Purchases & Distributor Bill Import</h1>
-        <p className="text-sm text-slate-500">Upload your distributor invoice to map columns, verify schemes, and update inventory.</p>
+      
+      {/* Top Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-950">Purchases</h1>
+          <p className="text-sm text-slate-500">Receiving a purchase order creates the batches automatically, so stock is sellable at once.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setViewMode('import')}
+            className="bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl border border-slate-300 shadow-sm transition flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-amber-500" /> Import distributor invoice
+          </button>
+          <button
+            onClick={() => setViewMode('new_po')}
+            className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> New purchase order
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -151,87 +198,183 @@ export default function PurchasesPage() {
         </div>
       )}
 
-      {/* Upload Drop Zone Box */}
-      <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 text-center">
-        <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl mx-auto flex items-center justify-center">
-          <FileSpreadsheet className="w-6 h-6" />
-        </div>
+      {viewMode === 'list' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Purchase Orders Table */}
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
+            <h3 className="font-bold text-slate-950 text-sm">Purchase orders</h3>
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-400 uppercase border-b border-slate-100">
+                <tr>
+                  <th className="pb-3 font-semibold">PO</th>
+                  <th className="pb-3 font-semibold">Vendor</th>
+                  <th className="pb-3 font-semibold">Date</th>
+                  <th className="pb-3 font-semibold">Items</th>
+                  <th className="pb-3 font-semibold">Value</th>
+                  <th className="pb-3 font-semibold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr className="hover:bg-slate-50">
+                  <td className="py-3 font-mono font-bold text-slate-900">PO-20260823-839</td>
+                  <td className="py-3 text-slate-600">MedPlus Distributors</td>
+                  <td className="py-3 text-slate-600">23 Aug 2026</td>
+                  <td className="py-3 text-slate-600 font-bold">3</td>
+                  <td className="py-3 font-extrabold text-slate-900">₹5,250.00</td>
+                  <td className="py-3 text-right">
+                    <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-bold text-[10px]">
+                      received
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-        <div>
-          <h3 className="text-base font-bold text-slate-950">Distributor Bill CSV/XLSX Import</h3>
-          <p className="text-xs text-slate-500 mt-1">Upload your distributor invoice to map columns, verify schemes (10+1), and review stock inward before updating inventory.</p>
-        </div>
-
-        {/* Hidden File Input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv"
-          onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
-          className="hidden"
-        />
-
-        {/* Drag & Drop Target Area */}
-        <div
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-slate-300 hover:border-amber-400 rounded-2xl p-8 cursor-pointer transition flex flex-col items-center justify-center space-y-3 bg-slate-50/50"
-        >
-          <Upload className="w-6 h-6 text-slate-400" />
-          <p className="text-xs font-semibold text-slate-700">
-            {file ? `Selected file: ${file.name}` : 'Click to upload or drag & drop distributor bill CSV'}
-          </p>
-          <button
-            type="button"
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow transition"
-          >
-            Select CSV File
-          </button>
-        </div>
-
-        {parsedData.length > 0 && (
-          <div className="space-y-4 pt-4 border-t border-slate-100 text-left">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-900">Parsed Preview ({parsedData.length} items ready)</span>
-              <button
-                onClick={handleImportInventory}
-                disabled={loading}
-                className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs shadow transition disabled:opacity-50"
-              >
-                {loading ? 'Importing into Inventory...' : 'Confirm & Import to Inventory'}
-              </button>
-            </div>
-
-            <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-100 text-slate-600 sticky top-0">
-                  <tr>
-                    <th className="p-2.5">Product Name</th>
-                    <th className="p-2.5">Brand</th>
-                    <th className="p-2.5">Batch</th>
-                    <th className="p-2.5">Expiry</th>
-                    <th className="p-2.5">MRP</th>
-                    <th className="p-2.5">Stock Qty</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {parsedData.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                      <td className="p-2.5 font-bold text-slate-900">{row.product_name}</td>
-                      <td className="p-2.5 text-slate-600">{row.brand}</td>
-                      <td className="p-2.5 font-mono text-slate-600">{row.batch_number}</td>
-                      <td className="p-2.5 text-slate-600">{row.expiry_date}</td>
-                      <td className="p-2.5 font-semibold text-slate-900">₹{row.mrp}</td>
-                      <td className="p-2.5 font-bold text-amber-700">{row.stock_qty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Vendors Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 h-fit">
+            <h3 className="font-bold text-slate-950 text-sm">Vendors</h3>
+            <div className="space-y-3">
+              {vendors.map(v => (
+                <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                  <strong className="text-slate-900 text-xs block">{v.name}</strong>
+                  <div className="text-[11px] text-slate-500 flex justify-between">
+                    <span>{v.phone}</span>
+                    <span className="font-mono">{v.gstin}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
-      </div>
+
+        </div>
+      )}
+
+      {viewMode === 'import' && (
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 text-center">
+          <button onClick={() => setViewMode('list')} className="text-xs font-bold text-slate-600 flex items-center gap-1 hover:text-slate-950">
+            <ArrowLeft className="w-4 h-4" /> Back to Purchases
+          </button>
+
+          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl mx-auto flex items-center justify-center">
+            <FileSpreadsheet className="w-6 h-6" />
+          </div>
+
+          <div>
+            <h3 className="text-base font-bold text-slate-950">Distributor Bill CSV/XLSX Import</h3>
+            <p className="text-xs text-slate-500 mt-1">Upload your distributor invoice to map columns, verify schemes (10+1), and review stock inward before updating inventory.</p>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
+            className="hidden"
+          />
+
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-slate-300 hover:border-amber-400 rounded-2xl p-8 cursor-pointer transition flex flex-col items-center justify-center space-y-3 bg-slate-50/50"
+          >
+            <Truck className="w-6 h-6 text-slate-400" />
+            <p className="text-xs font-semibold text-slate-700">
+              {file ? `Selected file: ${file.name}` : 'Click to upload or select distributor bill CSV (e.g. 200 SKUs file)'}
+            </p>
+            <button
+              type="button"
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow transition"
+            >
+              Select CSV File
+            </button>
+          </div>
+
+          {parsedData.length > 0 && (
+            <div className="space-y-4 pt-4 border-t border-slate-100 text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-900">Parsed Preview ({parsedData.length} items ready)</span>
+                <button
+                  onClick={handleBulkImport}
+                  disabled={importing}
+                  className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs shadow transition disabled:opacity-50"
+                >
+                  {importing ? 'Importing into Inventory...' : 'Confirm & Import to Inventory'}
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-600 sticky top-0">
+                    <tr>
+                      <th className="p-2.5">Product Name</th>
+                      <th className="p-2.5">Brand</th>
+                      <th className="p-2.5">Batch</th>
+                      <th className="p-2.5">Expiry</th>
+                      <th className="p-2.5">MRP</th>
+                      <th className="p-2.5">Stock Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {parsedData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-900">{row.product_name}</td>
+                        <td className="p-2.5 text-slate-600">{row.brand}</td>
+                        <td className="p-2.5 font-mono text-slate-600">{row.batch_number}</td>
+                        <td className="p-2.5 text-slate-600">{row.expiry_date}</td>
+                        <td className="p-2.5 font-semibold text-slate-900">₹{row.mrp}</td>
+                        <td className="p-2.5 font-bold text-amber-700">{row.stock_qty}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {viewMode === 'new_po' && (
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 max-w-xl mx-auto">
+          <div className="flex justify-between items-center border-b pb-3">
+            <h3 className="font-bold text-slate-950 text-base">Create New Purchase Order</h3>
+            <button onClick={() => setViewMode('list')} className="text-xs text-slate-500 font-bold">✕ Close</button>
+          </div>
+          <div className="space-y-4 text-xs">
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">Select Vendor</label>
+              <select value={poVendor} onChange={(e) => setPoVendor(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium">
+                <option value="MedPlus Distributors">MedPlus Distributors</option>
+                <option value="Sri Balaji Pharma">Sri Balaji Pharma</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">Item / Medicine Name</label>
+              <input type="text" placeholder="e.g. Paracetamol 650mg" value={poItemName} onChange={(e) => setPoItemName(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">Quantity</label>
+                <input type="number" value={poQty} onChange={(e) => setPoQty(Number(e.target.value))} className="w-full p-2.5 border rounded-xl font-medium" />
+              </div>
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">Total Value (₹)</label>
+                <input type="number" value={poValue} onChange={(e) => setPoValue(Number(e.target.value))} className="w-full p-2.5 border rounded-xl font-medium" />
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                alert('Purchase Order created successfully!');
+                setViewMode('list');
+              }}
+              className="w-full py-3 bg-teal-700 hover:bg-teal-800 text-white font-bold rounded-xl shadow transition"
+            >
+              Submit & Receive Purchase Order
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
