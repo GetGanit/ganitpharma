@@ -13,12 +13,12 @@ const config: Config = {
         foreground: "var(--foreground)",
         brand: {
           yellow: {
-            DEFAULT: "#eab308", // High-visibility yellow for primary action buttons
-            hover: #ca8a04,
+            DEFAULT: "#eab308",
+            hover: "#ca8a04",
             light: "#fef08a",
           },
           green: {
-            DEFAULT: "#22c55e", // Soft green for stock status & success badges
+            DEFAULT: "#22c55e",
             dark: "#15803d",
           },
         },
