@@ -6,68 +6,105 @@ import { ShieldAlert, Building2, Users, IndianRupee, ArrowLeft, CheckCircle2, Lo
 
 export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
-  const [authorized, setAuthorized] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalTenants: 0,
     totalRevenue: 0,
   });
+
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    async function loadAdminData() {
+    async function checkAuth() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
-
-      // Strict email check: Only durgabm2001@gmail.com can access
-      if (user.email !== 'durgabm2001@gmail.com') {
-        setLoading(false);
-        return;
-      }
-
-      setAuthorized(true);
-
-      // Fetch all organizations across all tenants (Super Admin view)
-      const { data: orgs, error } = await supabase
-        .from('organizations')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && orgs) {
-        setOrganizations(orgs);
-        const tenantCount = orgs.length;
-        const revenue = tenantCount * 49999;
-        setStats({
-          totalTenants: tenantCount,
-          totalRevenue: revenue,
-        });
+      // Check if already unlocked in session storage
+      if (sessionStorage.getItem('ganit_admin_unlocked') === 'true') {
+        setUnlocked(true);
+        loadAdminData();
       }
       setLoading(false);
     }
-
-    loadAdminData();
+    checkAuth();
   }, [router, supabase]);
 
-  if (loading) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm">Verifying owner credentials...</div>;
+  async function loadAdminData() {
+    const { data: orgs, error } = await supabase
+      .from('organizations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && orgs) {
+      setOrganizations(orgs);
+      const tenantCount = orgs.length;
+      const revenue = tenantCount * 49999;
+      setStats({
+        totalTenants: tenantCount,
+        totalRevenue: revenue,
+      });
+    }
   }
 
-  if (!authorized) {
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Change this password to whatever secure password you prefer!
+    if (passwordInput === 'GanitOwner@2026') {
+      setUnlocked(true);
+      sessionStorage.setItem('ganit_admin_unlocked', 'true');
+      loadAdminData();
+    } else {
+      setError('Incorrect admin password.');
+    }
+  };
+
+  if (loading) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm">Verifying security...</div>;
+  }
+
+  // Password Lock Screen
+  if (!unlocked) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4">
-        <div className="bg-slate-950 p-8 rounded-2xl shadow-xl max-w-md w-full text-center space-y-4 border border-slate-800">
-          <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-500/20">
-            <ShieldAlert className="w-6 h-6" />
+        <div className="bg-slate-950 p-8 rounded-2xl shadow-xl max-w-md w-full space-y-6 border border-slate-800">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto border border-amber-500/30">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Owner Admin Authentication</h2>
+            <p className="text-xs text-slate-400">Enter your master admin password to access central headquarters.</p>
           </div>
-          <h2 className="text-xl font-bold text-white">Restricted Access</h2>
-          <p className="text-xs text-slate-400">Only Ganit Owner (durgabm2001@gmail.com) is authorized to view this central super admin panel.</p>
-          <button onClick={() => router.push('/dashboard')} className="w-full py-2.5 bg-amber-400 text-slate-950 font-bold rounded-xl text-xs">
-            Return to Dashboard
-          </button>
+
+          <form onSubmit={handleUnlock} className="space-y-4 text-xs">
+            {error && <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl font-bold">{error}</div>}
+            <div>
+              <label className="block font-medium text-slate-400 mb-1">Master Password</label>
+              <input
+                type="password"
+                placeholder="Enter password..."
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                required
+                className="w-full p-3 bg-slate-900 border border-slate-800 rounded-xl font-medium text-white focus:ring-2 focus:ring-amber-400 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition text-xs"
+            >
+              Unlock Admin Panel
+            </button>
+            <div className="text-center pt-2">
+              <a href="/dashboard" className="text-slate-500 hover:text-slate-300 font-semibold">← Return to Dashboard</a>
+            </div>
+          </form>
         </div>
       </div>
     );
@@ -86,7 +123,7 @@ export default function SuperAdminPage() {
           </span>
         </div>
         <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-bold flex items-center gap-1">
-          <ShieldAlert className="w-3.5 h-3.5" /> Root Access Secured (durgabm2001@gmail.com)
+          <ShieldAlert className="w-3.5 h-3.5" /> Root Access Unlocked
         </div>
       </header>
 
