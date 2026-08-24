@@ -367,7 +367,7 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer Details</span>
                   <strong className="text-slate-950">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</strong>
@@ -408,13 +408,13 @@ export default function InvoicesPage() {
 
               <div className="border-t border-slate-200 pt-3 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
-                  <span>Subtotal:</span>
+                  <span>Gross Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
-                {Number(selectedInvoice.discount_total || 0) > 0 && (
+                {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
                   <div className="flex justify-between text-red-600 font-bold">
-                    <span>Overall Bill Discount:</span>
-                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
+                    <span>Discount Applied:</span>
+                    <span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-slate-600">
