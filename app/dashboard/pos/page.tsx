@@ -629,6 +629,16 @@ export default function POSPage() {
     fetchJournals();
   };
 
+  const printTaxInvoice = () => {
+    window.print();
+  };
+
+  const sendWhatsAppInvoice = (inv: any) => {
+    const phone = inv.customers?.phone || '919999999999';
+    const msg = encodeURIComponent(`Hello ${inv.customers?.customer_name || 'Customer'}, here is your tax invoice ${inv.invoice_number} from GanitPharma. Total Amount: ₹${Number(inv.final_amount).toFixed(2)}. Thank you for visiting!`);
+    window.open(`https://wa.me/91${phone}?text=${msg}`, '_blank');
+  };
+
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-hero-gradient">
       
@@ -1198,7 +1208,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Partial Return Modal */}
+      {/* Partial Return Modal from Journals */}
       {returnModalInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1250,7 +1260,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal with Discount Display */}
+      {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
@@ -1261,7 +1271,7 @@ export default function POSPage() {
                 <span className="text-xs text-slate-500 font-medium">Original for Recipient</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={printTaxInvoice} className="bg-slate-950 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1">
+                <button onClick={printTaxInvoice} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1">
                   <Printer className="w-3.5 h-3.5" /> Print / PDF
                 </button>
                 <button onClick={() => setSelectedInvoice(null)} className="text-slate-500 hover:text-slate-900 font-bold px-2">✕</button>
