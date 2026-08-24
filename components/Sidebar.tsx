@@ -26,7 +26,7 @@ export default function Sidebar() {
 
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Billing / POS', href: '/dashboard/pos', icon: ShoppingCart },
+    { name: 'Billing / POS', href: '/dashboard/pos', icon: ShoppingCart, badge: 'F2' },
     { name: 'Inventory', href: '/dashboard/inventory', icon: Package },
     { name: 'Purchases', href: '/dashboard/purchases', icon: Truck },
     { name: 'Invoices', href: '/dashboard/invoices', icon: FileText },
@@ -52,13 +52,21 @@ export default function Sidebar() {
               <a
                 key={item.name}
                 href={item.href}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 ${
+                className={`flex items-center justify-between px-4 py-2.5 rounded-xl transition-all duration-200 ${
                   isActive
-                    ? 'bg-amber-400/10 text-amber-400 font-bold shadow-sm'
+                    ? 'bg-amber-400 text-slate-950 font-extrabold shadow-sm'
                     : 'hover:bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                <Icon className="w-5 h-5 shrink-0" /> {item.name}
+                <div className="flex items-center gap-3">
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span>{item.name}</span>
+                </div>
+                {item.badge && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isActive ? 'bg-slate-950 text-amber-400' : 'bg-slate-800 text-amber-400'}`}>
+                    {item.badge}
+                  </span>
+                )}
               </a>
             );
           })}
