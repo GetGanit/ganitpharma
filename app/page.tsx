@@ -15,10 +15,10 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-hero-gradient text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950 overflow-hidden relative">
+    <div className="min-h-screen bg-gradient-to-br from-[#ffffff] via-[#f8fafc] to-[#f1f5f9] bg-[length:400%_400%] animate-pulse-slow text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950 overflow-hidden relative">
       
-      {/* Background Ambient Glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-brand-glow pointer-events-none blur-3xl" />
+      {/* Background Animated Ambient Glows */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[600px] bg-brand-glow pointer-events-none blur-3xl animate-pulse-slow" />
 
       {/* Top Banner */}
       <div className="bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 text-xs font-black py-2.5 px-4 text-center shadow-sm relative z-20">
@@ -56,7 +56,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-20 pb-16 px-6 lg:px-16 max-w-7xl mx-auto text-center space-y-6 z-10">
+      <section className="relative pt-20 pb-16 px-6 lg:px-16 max-w-7xl mx-auto text-center space-y-6 z-10 animate-fade-in">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-800 text-xs font-bold shadow-sm">
           <Sparkles className="w-4 h-4" /> Trusted by Independent Indian Retail Pharmacies
         </div>
@@ -78,7 +78,7 @@ export default function LandingPage() {
           </a>
           <a
             href="#features"
-            className="w-full sm:w-auto bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm px-8 py-4 rounded-2xl border border-slate-200/80 shadow-sm transition"
+            className="w-full sm:w-auto bg-white/80 backdrop-blur-sm hover:bg-white text-slate-900 font-bold text-sm px-8 py-4 rounded-2xl border border-slate-200/80 shadow-sm transition"
           >
             Explore Features
           </a>
@@ -92,7 +92,7 @@ export default function LandingPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <Zap className="w-5 h-5" />
             </div>
@@ -102,7 +102,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <Package className="w-5 h-5" />
             </div>
@@ -112,7 +112,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <FileText className="w-5 h-5" />
             </div>
@@ -122,7 +122,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <BarChart3 className="w-5 h-5" />
             </div>
@@ -132,7 +132,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <ShieldCheck className="w-5 h-5" />
             </div>
@@ -142,7 +142,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
+          <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 space-y-3 shadow-sm hover:shadow-md transition">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
               <ShieldCheck className="w-5 h-5" />
             </div>
@@ -156,7 +156,7 @@ export default function LandingPage() {
 
       {/* Pricing Section */}
       <section id="pricing" className="py-16 px-6 lg:px-16 max-w-4xl mx-auto relative z-10">
-        <div className="bg-white/95 backdrop-blur-md p-8 sm:p-12 rounded-3xl border border-slate-200/80 shadow-2xl space-y-6">
+        <div className="bg-white/90 backdrop-blur-md p-8 sm:p-12 rounded-3xl border border-slate-200/80 shadow-2xl space-y-6">
           <div className="space-y-1">
             <span className="text-xs font-bold text-amber-700 uppercase tracking-widest">GanitPharma — full product</span>
             <div className="flex items-baseline gap-3">
@@ -229,7 +229,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200/80 py-16 px-6 lg:px-16 bg-white/80 backdrop-blur-md relative z-10 text-xs text-slate-600">
+      <footer className="border-t border-slate-200/80 py-16 px-6 lg:px-16 bg-white/70 backdrop-blur-md relative z-10 text-xs text-slate-600">
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
