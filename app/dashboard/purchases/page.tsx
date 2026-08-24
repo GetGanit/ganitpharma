@@ -2,14 +2,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft, Trash2, Building2 } from 'lucide-react';
 
 export default function PurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [vendorsList, setVendorsList] = useState<any[]>([]);
   
-  const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po' | 'new_vendor'>('list');
   
   // CSV Import State
   const [file, setFile] = useState<File | null>(null);
@@ -24,6 +24,11 @@ export default function PurchasesPage() {
   const [poItemName, setPoItemName] = useState('');
   const [poQty, setPoQty] = useState(50);
   const [poValue, setPoValue] = useState(2500);
+
+  // New Vendor Form State
+  const [newVendorName, setNewVendorName] = useState('');
+  const [newVendorPhone, setNewVendorPhone] = useState('');
+  const [newVendorGstin, setNewVendorGstin] = useState('');
 
   const router = useRouter();
   const supabase = createClient();
@@ -42,7 +47,6 @@ export default function PurchasesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      // Fetch Real Purchase Orders
       const { data: poData } = await supabase
         .from('purchase_orders')
         .select('*')
@@ -51,7 +55,6 @@ export default function PurchasesPage() {
 
       if (poData) setPurchaseOrders(poData);
 
-      // Fetch Real Vendors
       const { data: vendorData } = await supabase
         .from('vendors')
         .select('*')
@@ -64,6 +67,54 @@ export default function PurchasesPage() {
     }
     setLoading(false);
   }
+
+  const handleDeleteVendor = async (vendorId: string) => {
+    if (!confirm('Are you sure you want to delete this vendor?')) return;
+    
+    const { error: delErr } = await supabase
+      .from('vendors')
+      .delete()
+      .eq('id', vendorId);
+
+    if (delErr) {
+      alert('Failed to delete vendor: ' + delErr.message);
+      return;
+    }
+
+    setVendorsList(vendorsList.filter(v => v.id !== vendorId));
+    setSuccessMsg('Vendor deleted successfully.');
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const handleCreateVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVendorName) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) return;
+
+    const { error: insErr } = await supabase.from('vendors').insert([{
+      organization_id: orgId,
+      vendor_name: newVendorName,
+      phone: newVendorPhone,
+      gstin: newVendorGstin
+    }]);
+
+    if (insErr) {
+      alert('Error adding vendor: ' + insErr.message);
+      return;
+    }
+
+    setNewVendorName('');
+    setNewVendorPhone('');
+    setNewVendorGstin('');
+    setSuccessMsg('Vendor added successfully!');
+    setViewMode('list');
+    fetchPurchasesData();
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
 
   const handleFileChange = (selectedFile: File | null) => {
     if (!selectedFile) return;
@@ -219,6 +270,12 @@ export default function PurchasesPage() {
             <FileSpreadsheet className="w-4 h-4 text-amber-500" /> Import distributor invoice
           </button>
           <button
+            onClick={() => setViewMode('new_vendor')}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+          >
+            <Building2 className="w-4 h-4" /> Add Vendor
+          </button>
+          <button
             onClick={() => setViewMode('new_po')}
             className="bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
           >
@@ -278,7 +335,7 @@ export default function PurchasesPage() {
             )}
           </div>
 
-          {/* Vendors Card */}
+          {/* Vendors Card with Delete Option */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 h-fit">
             <h3 className="font-bold text-slate-950 text-sm">Registered Vendors</h3>
             {vendorsList.length === 0 ? (
@@ -286,12 +343,21 @@ export default function PurchasesPage() {
             ) : (
               <div className="space-y-3">
                 {vendorsList.map(v => (
-                  <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
-                    <strong className="text-slate-900 text-xs block">{v.vendor_name}</strong>
-                    <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>{v.phone}</span>
-                      <span className="font-mono">{v.gstin}</span>
+                  <div key={v.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
+                    <div>
+                      <strong className="text-slate-900 text-xs block">{v.vendor_name}</strong>
+                      <div className="text-[11px] text-slate-500 space-x-2">
+                        <span>{v.phone}</span>
+                        <span className="font-mono">{v.gstin}</span>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleDeleteVendor(v.id)}
+                      className="text-red-500 hover:text-red-700 p-1 rounded-lg transition"
+                      title="Delete Vendor"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -381,6 +447,35 @@ export default function PurchasesPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {viewMode === 'new_vendor' && (
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 max-w-xl mx-auto">
+          <div className="flex justify-between items-center border-b pb-3">
+            <h3 className="font-bold text-slate-950 text-base">Add New Vendor</h3>
+            <button onClick={() => setViewMode('list')} className="text-xs text-slate-500 font-bold">✕ Close</button>
+          </div>
+          <form onSubmit={handleCreateVendor} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">Vendor Name</label>
+              <input type="text" placeholder="e.g. Apollo Distributors" value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} required className="w-full p-2.5 border rounded-xl font-medium" />
+            </div>
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">Phone Number</label>
+              <input type="text" placeholder="e.g. +91 98765 43210" value={newVendorPhone} onChange={(e) => setNewVendorPhone(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
+            </div>
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">GSTIN</label>
+              <input type="text" placeholder="e.g. 29AAAAA0000A1Z5" value={newVendorGstin} onChange={(e) => setNewVendorGstin(e.target.value)} className="w-full p-2.5 border rounded-xl font-medium" />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow transition"
+            >
+              Save Vendor
+            </button>
+          </form>
         </div>
       )}
 
