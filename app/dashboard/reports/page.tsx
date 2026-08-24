@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { FileText, Download, Calendar, ArrowLeft, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Download, Calendar, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
@@ -31,27 +31,23 @@ export default function ReportsPage() {
       return;
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
+    const orgId = user.user_metadata?.organization_id;
 
-    if (profile?.organization_id) {
+    if (orgId) {
       const startTimestamp = `${startDate}T00:00:00`;
       const endTimestamp = `${endDate}T23:59:59`;
 
       const { data, error } = await supabase
         .from('sales')
-        .select('*')
-        .eq('organization_id', profile.organization_id)
+        .select('*, customers(phone)')
+        .eq('organization_id', orgId)
         .gte('created_at', startTimestamp)
         .lte('created_at', endTimestamp);
 
       if (!error && data) {
         setSalesList(data);
         const count = data.length;
-        const salesTotal = data.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0);
+        const salesTotal = data.reduce((acc, curr) => acc + Number(curr.final_amount || 0), 0);
         const gstTotal = data.reduce((acc, curr) => acc + Number(curr.gst_total || 0), 0);
         const taxableVal = salesTotal - gstTotal;
 
@@ -68,7 +64,6 @@ export default function ReportsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Header */}
       <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition flex items-center gap-1 text-xs font-semibold">
@@ -78,16 +73,13 @@ export default function ReportsPage() {
         </div>
         <button
           onClick={() => alert('GST Report exported successfully for filing.')}
-          className="bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
+          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-1.5"
         >
           <Download className="w-4 h-4" /> Export GSTR-1 Summary
         </button>
       </header>
 
-      {/* Main Body */}
       <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
-        
-        {/* Date Filter Bar */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-bold text-slate-900">Tax Period Filter</h3>
@@ -118,7 +110,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Summary Metrics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="text-slate-500 text-sm font-medium">Total Gross Sales</div>
@@ -134,7 +125,7 @@ export default function ReportsPage() {
 
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="text-slate-500 text-sm font-medium">Total Output GST Collected</div>
-            <div className="mt-4 text-3xl font-extrabold text-brand-green">₹{reportData.totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="mt-4 text-3xl font-extrabold text-green-600">₹{reportData.totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
             <div className="mt-2 text-xs text-slate-500">CGST + SGST / IGST liability</div>
           </div>
 
@@ -149,7 +140,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Sales Invoices Table for Audit */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-200 font-bold text-slate-900">Tax Invoices in Selected Period ({salesList.length})</div>
           {loading ? (
@@ -162,7 +152,6 @@ export default function ReportsPage() {
                 <tr>
                   <th className="p-4 font-semibold">Invoice Number</th>
                   <th className="p-4 font-semibold">Customer Phone</th>
-                  <th className="p-4 font-semibold">Payment Mode</th>
                   <th className="p-4 font-semibold">GST Included</th>
                   <th className="p-4 font-semibold">Total Amount</th>
                   <th className="p-4 font-semibold">Date & Time</th>
@@ -171,11 +160,10 @@ export default function ReportsPage() {
               <tbody className="divide-y divide-slate-100">
                 {salesList.map((sale) => (
                   <tr key={sale.id} className="hover:bg-slate-50/50">
-                    <td className="p-4 font-bold text-slate-900">{sale.invoice_number || 'INV-EXPRESS'}</td>
-                    <td className="p-4 text-slate-600">{sale.customer_phone || 'Walk-in'}</td>
-                    <td className="p-4 uppercase text-xs font-bold text-slate-700">{sale.payment_method}</td>
+                    <td className="p-4 font-bold text-slate-900">{sale.invoice_number}</td>
+                    <td className="p-4 text-slate-600">{sale.customers?.phone || 'Walk-in'}</td>
                     <td className="p-4 text-slate-600">₹{Number(sale.gst_total || 0).toFixed(2)}</td>
-                    <td className="p-4 font-extrabold text-slate-900">₹{Number(sale.total_amount || 0).toFixed(2)}</td>
+                    <td className="p-4 font-extrabold text-slate-900">₹{Number(sale.final_amount || 0).toFixed(2)}</td>
                     <td className="p-4 text-slate-500 text-xs">{new Date(sale.created_at).toLocaleString()}</td>
                   </tr>
                 ))}
@@ -183,7 +171,6 @@ export default function ReportsPage() {
             </table>
           )}
         </div>
-
       </div>
     </div>
   );
