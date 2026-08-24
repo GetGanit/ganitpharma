@@ -336,7 +336,7 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal with Unit Price, Discount & Total breakdown */}
+      {/* Tax Invoice Modal with Discount Display */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
@@ -367,7 +367,7 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer Details</span>
                   <strong className="text-slate-950">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</strong>
@@ -411,6 +411,12 @@ export default function InvoicesPage() {
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
+                {Number(selectedInvoice.discount_total || 0) > 0 && (
+                  <div className="flex justify-between text-red-600 font-bold">
+                    <span>Overall Bill Discount:</span>
+                    <span>-₹{Number(selectedInvoice.discount_total).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
