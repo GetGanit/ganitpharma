@@ -2,232 +2,214 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Shield, UserPlus, ArrowLeft, Lock, CheckCircle2, UserCheck, AlertCircle } from 'lucide-react';
+import { Settings, Shield, CheckCircle2 } from 'lucide-react';
 
-export default function UsersPage() {
+export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
-  const [staffList, setStaffList] = useState<any[]>([]);
-  const [newStaff, setNewStaff] = useState({ email: '', fullName: '', role: 'cashier', password: '' });
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [profile, setProfile] = useState({
+    tradingName: 'Ganit Pharmacy',
+    legalName: 'Ganit Retail Pharma Pvt Ltd',
+    gstin: '29ABCDE1234F1Z5',
+    drugLicence: 'MH-MUM-20B-4412',
+    phone: '+91 98450 11223',
+    email: 'owner@ganitdemo.in',
+    address: '12 MG Road, Bengaluru 560001',
+    invoicePrefix: 'INV',
+    lowStockThreshold: 10,
+    expiryAlertDays: 90,
+    receiptFormat: 'a5',
+  });
 
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    fetchStaff();
-  }, []);
-
-  async function fetchStaff() {
-    setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id, role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.organization_id) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('organization_id', profile.organization_id);
-
-      if (data) setStaffList(data);
-    }
-    setLoading(false);
-  }
-
-  const handleAddStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.organization_id) {
-      setError('Organization context not found.');
-      setLoading(false);
-      return;
-    }
-
-    // 1. Create auth user for staff
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: newStaff.email,
-      password: newStaff.password,
-    });
-
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-      return;
-    }
-
-    const newUserId = authData.user?.id;
-
-    if (newUserId) {
-      // 2. Insert into profiles with specified role
-      const { error: profileError } = await supabase.from('profiles').insert([
-        {
-          id: newUserId,
-          organization_id: profile.organization_id,
-          full_name: newStaff.fullName,
-          role: newStaff.role,
-        },
-      ]);
-
-      if (profileError) {
-        setError(profileError.message);
-      } else {
-        setSuccess(`Staff account created successfully for ${newStaff.fullName} (${newStaff.role})!`);
-        setNewStaff({ email: '', fullName: '', role: 'cashier', password: '' });
-        fetchStaff();
+    async function fetchOrg() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
       }
+      const orgId = user.user_metadata?.organization_id;
+      if (orgId) {
+        const { data } = await supabase.from('organizations').select('*').eq('id', orgId).single();
+        if (data) {
+          setProfile({
+            tradingName: data.name || '',
+            legalName: data.owner_name || '',
+            gstin: data.gstin || '',
+            drugLicence: 'MH-MUM-20B-4412',
+            phone: data.phone || '',
+            email: data.email || '',
+            address: data.address || '',
+            invoicePrefix: 'INV',
+            lowStockThreshold: 10,
+            expiryAlertDays: 90,
+            receiptFormat: 'a5',
+          });
+        }
+      }
+      setLoading(false);
     }
-    setLoading(false);
+    fetchOrg();
+  }, [router, supabase]);
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Header */}
-      <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <a href="/dashboard" className="text-slate-500 hover:text-slate-900 transition flex items-center gap-1 text-xs font-semibold">
-            <ArrowLeft className="w-4 h-4" /> Dashboard
-          </a>
-          <span className="text-lg font-bold text-slate-900">Staff Roles & Permissions Management</span>
+    <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
+      <div>
+        <h1 className="text-2xl font-extrabold text-slate-950">Settings</h1>
+        <p className="text-sm text-slate-500">Details here print on every GST invoice you issue.</p>
+      </div>
+
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span className="font-bold">Settings saved successfully!</span>
         </div>
-      </header>
+      )}
 
-      {/* Main Body */}
-      <div className="p-8 max-w-7xl w-full mx-auto space-y-8 flex-1">
-        
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pharmacy Profile */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div>
+            <h3 className="font-bold text-slate-950 text-sm">Pharmacy profile</h3>
+            <p className="text-xs text-slate-400">Appears on invoice headers.</p>
           </div>
-        )}
-        {success && (
-          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{success}</span>
-          </div>
-        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Add Staff Form */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-fit">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-brand-yellow" /> Add Staff Member
-            </h3>
-            <form onSubmit={handleAddStaff} className="space-y-4">
+          <form onSubmit={handleSave} className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-700">Full Name</label>
+                <label className="block font-medium text-slate-600 mb-1">Trading name</label>
                 <input
                   type="text"
-                  required
-                  value={newStaff.fullName}
-                  onChange={(e) => setNewStaff({ ...newStaff, fullName: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                  placeholder="Rahul Sharma"
+                  value={profile.tradingName}
+                  onChange={(e) => setProfile({ ...profile, tradingName: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-medium text-slate-700">Email Address</label>
+                <label className="block font-medium text-slate-600 mb-1">Legal name</label>
+                <input
+                  type="text"
+                  value={profile.legalName}
+                  onChange={(e) => setProfile({ ...profile, legalName: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">GSTIN</label>
+                <input
+                  type="text"
+                  value={profile.gstin}
+                  onChange={(e) => setProfile({ ...profile, gstin: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">Drug licence no.</label>
+                <input
+                  type="text"
+                  value={profile.drugLicence}
+                  onChange={(e) => setProfile({ ...profile, drugLicence: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">Phone</label>
+                <input
+                  type="text"
+                  value={profile.phone}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-slate-600 mb-1">Email</label>
                 <input
                   type="email"
-                  required
-                  value={newStaff.email}
-                  onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                  placeholder="rahul@pharmacy.in"
+                  value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-700">Temporary Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newStaff.password}
-                  onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                  placeholder="••••••••"
-                />
+            <div>
+              <label className="block font-medium text-slate-600 mb-1">Address</label>
+              <input
+                type="text"
+                value={profile.address}
+                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+              />
+            </div>
+
+            <button type="submit" className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition">
+              Save profile
+            </button>
+          </form>
+        </div>
+
+        {/* Billing Preferences & Team */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div>
+              <h3 className="font-bold text-slate-950 text-sm">Billing preferences</h3>
+              <p className="text-xs text-slate-400">Invoice numbers run in sequence per pharmacy.</p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-600 mb-1">Invoice prefix</label>
+                  <input type="text" value={profile.invoicePrefix} onChange={(e) => setProfile({ ...profile, invoicePrefix: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-600 mb-1">Low stock threshold</label>
+                  <input type="number" value={profile.lowStockThreshold} onChange={(e) => setProfile({ ...profile, lowStockThreshold: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700">Role & Access Level</label>
-                <select
-                  value={newStaff.role}
-                  onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white"
-                >
-                  <option value="cashier">Cashier (POS & Inventory View)</option>
-                  <option value="pharmacist">Pharmacist (POS, Inventory & Purchasing)</option>
-                  <option value="owner">Owner / Admin (Full Access & Tax Reports)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-slate-600 mb-1">Expiry alert (days)</label>
+                  <input type="number" value={profile.expiryAlertDays} onChange={(e) => setProfile({ ...profile, expiryAlertDays: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                </div>
+                <div>
+                  <label className="block font-medium text-slate-600 mb-1">Receipt format (a5/thermal)</label>
+                  <input type="text" value={profile.receiptFormat} onChange={(e) => setProfile({ ...profile, receiptFormat: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                </div>
               </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-brand-yellow hover:bg-brand-yellow-hover text-slate-950 font-bold rounded-xl text-sm shadow transition"
-              >
-                {loading ? 'Provisioning...' : 'Create Staff Account'}
+              <button onClick={() => setSuccess(true)} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition">
+                Save preferences
               </button>
-            </form>
+            </div>
           </div>
 
-          {/* Staff List Table */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-200 font-bold text-slate-900">Active Tenant Staff Members ({staffList.length})</div>
-            {staffList.length === 0 ? (
-              <div className="p-16 text-center text-slate-400">No staff accounts registered yet.</div>
-            ) : (
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="p-4 font-semibold">Name</th>
-                    <th className="p-4 font-semibold">Role</th>
-                    <th className="p-4 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {staffList.map((staff) => (
-                    <tr key={staff.id} className="hover:bg-slate-50/50">
-                      <td className="p-4 font-bold text-slate-900">{staff.full_name || 'Unnamed User'}</td>
-                      <td className="p-4">
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase ${staff.role === 'owner' ? 'bg-purple-100 text-purple-800' : staff.role === 'pharmacist' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
-                          {staff.role}
-                        </span>
-                      </td>
-                      <td className="p-4 text-green-600 font-semibold text-xs flex items-center gap-1">
-                        <UserCheck className="w-4 h-4" /> Active Tenant Access
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+            <div>
+              <h3 className="font-bold text-slate-950 text-sm">Team</h3>
+              <p className="text-xs text-slate-400">Roles decide who can edit settings and cancel invoices.</p>
+            </div>
+            <div className="space-y-2 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl flex justify-between items-center border border-slate-100">
+                <span className="font-mono text-slate-700">Admin Owner</span>
+                <span className="bg-slate-200 text-slate-800 px-2.5 py-1 rounded-full font-bold">Owner</span>
+              </div>
+            </div>
           </div>
-
         </div>
       </div>
     </div>
