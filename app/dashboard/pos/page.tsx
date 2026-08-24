@@ -181,12 +181,10 @@ export default function POSPage() {
         const prod = products[selectedIndex];
         if (prod) {
           const qtyInputEl = qtyInputRefs.current[prod.id];
-          // If Qty input is not currently focused, focus it first
           if (document.activeElement !== qtyInputEl) {
             qtyInputEl?.focus();
             qtyInputEl?.select();
           } else {
-            // If already focused on Qty, pressing Enter adds it to cart!
             if (prod.product_batches && prod.product_batches.length > 0) {
               const sortedBatches = [...prod.product_batches].sort((a, b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
               const qty = Number(suggestionQtys[prod.id]) || 1;
@@ -821,7 +819,9 @@ export default function POSPage() {
                         <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-sm">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">QTY</span>
                           <input
-                            ref={(el) => (qtyInputRefs.current[prod.id] = el)}
+                            ref={(el) => {
+                              qtyInputRefs.current[prod.id] = el;
+                            }}
                             type="number"
                             min="1"
                             value={suggestionQtys[prod.id] ?? 1}
