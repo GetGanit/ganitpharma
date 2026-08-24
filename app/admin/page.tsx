@@ -2,10 +2,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { ShieldAlert, Building2, Users, IndianRupee, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, Building2, Users, IndianRupee, ArrowLeft, CheckCircle2, Lock } from 'lucide-react';
 
 export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalTenants: 0,
@@ -22,6 +23,14 @@ export default function SuperAdminPage() {
         return;
       }
 
+      // Strict email check: Only durgabm2001@gmail.com can access
+      if (user.email !== 'durgabm2001@gmail.com') {
+        setLoading(false);
+        return;
+      }
+
+      setAuthorized(true);
+
       // Fetch all organizations across all tenants (Super Admin view)
       const { data: orgs, error } = await supabase
         .from('organizations')
@@ -31,7 +40,6 @@ export default function SuperAdminPage() {
       if (!error && orgs) {
         setOrganizations(orgs);
         const tenantCount = orgs.length;
-        // Each organization represents a ₹49,999 one-time purchase license
         const revenue = tenantCount * 49999;
         setStats({
           totalTenants: tenantCount,
@@ -44,6 +52,27 @@ export default function SuperAdminPage() {
     loadAdminData();
   }, [router, supabase]);
 
+  if (loading) {
+    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm">Verifying owner credentials...</div>;
+  }
+
+  if (!authorized) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4">
+        <div className="bg-slate-950 p-8 rounded-2xl shadow-xl max-w-md w-full text-center space-y-4 border border-slate-800">
+          <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-500/20">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Restricted Access</h2>
+          <p className="text-xs text-slate-400">Only Ganit Owner (durgabm2001@gmail.com) is authorized to view this central super admin panel.</p>
+          <button onClick={() => router.push('/dashboard')} className="w-full py-2.5 bg-amber-400 text-slate-950 font-bold rounded-xl text-xs">
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col">
       {/* Admin Top Header */}
@@ -53,11 +82,11 @@ export default function SuperAdminPage() {
             <ArrowLeft className="w-4 h-4" /> Exit to Tenant Dashboard
           </a>
           <span className="text-lg font-bold tracking-tight text-white">
-            Ganit<span className="text-brand-yellow">Pharma</span> • Central Super Admin
+            Ganit<span className="text-amber-400">Pharma</span> • Central Super Admin
           </span>
         </div>
         <div className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/30 px-3 py-1 rounded-full font-bold flex items-center gap-1">
-          <ShieldAlert className="w-3.5 h-3.5" /> Root Access Secured
+          <ShieldAlert className="w-3.5 h-3.5" /> Root Access Secured (durgabm2001@gmail.com)
         </div>
       </header>
 
@@ -73,7 +102,7 @@ export default function SuperAdminPage() {
           <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-sm">
             <div className="flex items-center justify-between text-slate-400 text-sm font-medium">
               <span>Total Registered Pharmacies</span>
-              <Building2 className="w-5 h-5 text-brand-yellow" />
+              <Building2 className="w-5 h-5 text-amber-400" />
             </div>
             <div className="mt-4 text-4xl font-extrabold text-white">{stats.totalTenants}</div>
             <div className="mt-2 text-xs text-slate-500">Active tenant organizations</div>
@@ -82,12 +111,12 @@ export default function SuperAdminPage() {
           <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-sm">
             <div className="flex items-center justify-between text-slate-400 text-sm font-medium">
               <span>Total Gross License Revenue</span>
-              <IndianRupee className="w-5 h-5 text-brand-green" />
+              <IndianRupee className="w-5 h-5 text-green-400" />
             </div>
             <div className="mt-4 text-4xl font-extrabold text-white">
               ₹{stats.totalRevenue.toLocaleString('en-IN')}
             </div>
-            <div className="mt-2 text-xs text-brand-green font-semibold">Based on ₹49,999 one-time purchase model</div>
+            <div className="mt-2 text-xs text-green-400 font-semibold">Based on ₹49,999 one-time purchase model</div>
           </div>
 
           <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-sm">
@@ -107,9 +136,7 @@ export default function SuperAdminPage() {
             <span className="text-xs text-slate-400">Master Database Record</span>
           </div>
 
-          {loading ? (
-            <div className="p-12 text-center text-slate-500 text-sm">Loading super admin records...</div>
-          ) : organizations.length === 0 ? (
+          {organizations.length === 0 ? (
             <div className="p-16 text-center text-slate-500">No tenant pharmacies registered yet.</div>
           ) : (
             <table className="w-full text-left text-sm">
