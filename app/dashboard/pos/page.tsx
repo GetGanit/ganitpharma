@@ -953,11 +953,11 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Bottom Financial Bar */}
+          {/* Bottom Financial Bar with fixed gross subtotal */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 grid grid-cols-6 gap-3 text-xs shadow-sm items-center">
             <div>
               <span className="text-slate-400 font-bold block">Subtotal</span>
-              <strong className="text-sm font-black text-slate-950">₹{subtotal.toFixed(2)}</strong>
+              <strong className="text-sm font-black text-slate-950">₹{grossTotalWithoutAnyDiscounts.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-400 font-bold block">Overall Bill Disc %</span>
@@ -1351,7 +1351,13 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 5mm;
+                  margin: 4mm;
+                }
+                body, html {
+                  height: 100%;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: white !important;
                 }
                 body * {
                   visibility: hidden;
@@ -1360,15 +1366,16 @@ export default function POSPage() {
                   visibility: visible;
                 }
                 .fixed.inset-0 {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
-                  width: 100%;
-                  height: auto;
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  height: 100% !important;
                   background: white !important;
                   display: block !important;
-                  page-break-inside: avoid;
-                  page-break-after: avoid;
+                  page-break-after: avoid !important;
+                  page-break-inside: avoid !important;
+                  overflow: hidden !important;
                 }
                 .print\\:hidden {
                   display: none !important;
@@ -1456,7 +1463,7 @@ export default function POSPage() {
 
               <div className="border-t border-slate-200 pt-3 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
-                  <span>Gross Subtotal:</span>
+                  <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
                 {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
@@ -1475,7 +1482,7 @@ export default function POSPage() {
                 </div>
               </div>
 
-              <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100 font-medium">
+              <div className="text-center text-[10px] text-slate-400 pt-3 border-t border-slate-100 font-medium">
                 Certified that the particulars given above are true and correct. Computer Generated Tax Invoice.
               </div>
             </div>
