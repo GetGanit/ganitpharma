@@ -20,10 +20,7 @@ import {
   BarChart3,
   ShieldCheck,
   Settings,
-  History,
-  Printer,
-  Percent,
-  UserCheck
+  Percent
 } from 'lucide-react';
 
 interface CartItem {
@@ -33,9 +30,10 @@ interface CartItem {
   selling_price: number;
   mrp: number;
   gst_percentage: number;
-  quantity: number;
+  quantity: number | string; // allows smooth typing of multi-digit numbers
   pack_size: number;
   available_qty: number;
+  discount_percent: number;
 }
 
 export default function POSPage() {
@@ -51,9 +49,11 @@ export default function POSPage() {
   const [salesOrigin, setSalesOrigin] = useState('Regular sales');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card'>('cash');
   
-  // Modals / Drawers
+  // Modals
   const [showJournalsModal, setShowJournalsModal] = useState(false);
   const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
+  const [discountModalIndex, setDiscountModalIndex] = useState<number | null>(null);
+  const [itemDiscountInput, setItemDiscountInput] = useState<number>(0);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export default function POSPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  // Keyboard Shortcuts (F2 for Search, F1 for Journals)
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -78,7 +78,7 @@ export default function POSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Customer Lookup on Phone Number Change
+  // Customer Lookup
   useEffect(() => {
     async function lookupCustomer() {
       if (customerPhone.length < 10) return;
@@ -158,11 +158,12 @@ export default function POSPage() {
 
     if (existingIndex > -1) {
       const updated = [...cart];
-      if (updated[existingIndex].quantity + 1 > availableQty) {
+      const currentQtyNum = Number(updated[existingIndex].quantity) || 0;
+      if (currentQtyNum + 1 > availableQty) {
         alert(`Stock limit reached! Only ${availableQty} units available.`);
         return;
       }
-      updated[existingIndex].quantity += 1;
+      updated[existingIndex].quantity = currentQtyNum + 1;
       setCart(updated);
     } else {
       if (availableQty <= 0) {
@@ -181,6 +182,7 @@ export default function POSPage() {
           quantity: 1,
           pack_size: packSize,
           available_qty: availableQty,
+          discount_percent: 0,
         },
       ]);
     }
@@ -189,14 +191,21 @@ export default function POSPage() {
     searchInputRef.current?.focus();
   };
 
-  const updateQuantity = (index: number, qty: number) => {
-    if (qty <= 0) return;
-    if (qty > cart[index].available_qty) {
-      alert(`Insufficient stock! Only ${cart[index].available_qty} units available.`);
-      return;
-    }
+  const handleQuantityChange = (index: number, val: string) => {
     const updated = [...cart];
-    updated[index].quantity = qty;
+    updated[index].quantity = val; // allows typing '2', then '5' freely without jumping
+    setCart(updated);
+  };
+
+  const handleQuantityBlur = (index: number) => {
+    const updated = [...cart];
+    let qtyNum = parseInt(String(updated[index].quantity)) || 1;
+    if (qtyNum > updated[index].available_qty) {
+      alert(`Insufficient stock! Max available is ${updated[index].available_qty}.`);
+      qtyNum = updated[index].available_qty;
+    }
+    if (qtyNum < 1) qtyNum = 1;
+    updated[index].quantity = qtyNum;
     setCart(updated);
   };
 
@@ -204,16 +213,33 @@ export default function POSPage() {
     setCart(cart.filter((_, i) => i !== index));
   };
 
+  // Apply item manual discount
+  const applyItemDiscount = () => {
+    if (discountModalIndex !== null) {
+      const updated = [...cart];
+      updated[discountModalIndex].discount_percent = Number(itemDiscountInput) || 0;
+      setCart(updated);
+      setDiscountModalIndex(null);
+      setItemDiscountInput(0);
+    }
+  };
+
   // Financial Calculations & Unit Breakdown
   const subtotal = cart.reduce((acc, item) => {
+    const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
-    return acc + (perUnitPrice * item.quantity);
+    const gross = perUnitPrice * qtyNum;
+    const disc = gross * ((item.discount_percent || 0) / 100);
+    return acc + (gross - disc);
   }, 0);
 
   const totalGST = cart.reduce((acc, item) => {
+    const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
-    const itemTotal = perUnitPrice * item.quantity;
-    return acc + (itemTotal * item.gst_percentage) / (100 + item.gst_percentage);
+    const gross = perUnitPrice * qtyNum;
+    const disc = gross * ((item.discount_percent || 0) / 100);
+    const netItemTotal = gross - disc;
+    return acc + (netItemTotal * item.gst_percentage) / (100 + item.gst_percentage);
   }, 0);
 
   const finalTotal = subtotal;
@@ -251,7 +277,7 @@ export default function POSPage() {
       } else {
         const { data: newCust } = await supabase
           .from('customers')
-          .insert([{ organization_id: orgId, customer_name: customerName || 'Walk-in Customer', phone: customerPhone, dob: customerDOB || null }])
+          .insert([{ organization_id: orgId, customer_name: customerName || 'Retail Customer', phone: customerPhone, dob: customerDOB || null }])
           .select('id')
           .single();
         if (newCust) customerId = newCust.id;
@@ -281,7 +307,11 @@ export default function POSPage() {
     }
 
     for (const item of cart) {
+      const qtyNum = Number(item.quantity) || 1;
       const perUnitPrice = item.selling_price / item.pack_size;
+      const gross = perUnitPrice * qtyNum;
+      const disc = gross * ((item.discount_percent || 0) / 100);
+      const itemFinalTotal = gross - disc;
       
       const { data: batchData } = await supabase
         .from('product_batches')
@@ -297,15 +327,15 @@ export default function POSPage() {
           organization_id: orgId,
           product_id: item.id,
           batch_id: batchData.id,
-          quantity_sold: item.quantity,
+          quantity_sold: qtyNum,
           unit_price: perUnitPrice,
           gst_percent: item.gst_percentage,
-          total_price: perUnitPrice * item.quantity
+          total_price: itemFinalTotal
         }]);
 
         await supabase
           .from('product_batches')
-          .update({ stock_qty: Math.max(0, batchData.stock_qty - item.quantity) })
+          .update({ stock_qty: Math.max(0, batchData.stock_qty - qtyNum) })
           .eq('id', batchData.id);
       }
     }
@@ -368,7 +398,7 @@ export default function POSPage() {
       {/* Main POS Interface */}
       <div className="flex-1 flex flex-col min-w-0">
         
-        {/* Top Metadata Panel (Apollo Style) */}
+        {/* Top Metadata Panel */}
         <div className="bg-slate-200 border-b border-slate-300 p-3 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
           <div className="bg-white p-3 rounded-xl border border-slate-300 space-y-2 shadow-sm">
             <div className="flex justify-between items-center">
@@ -441,10 +471,9 @@ export default function POSPage() {
           </div>
         </div>
 
-        {/* Center Grid: Cart & Right Quick Actions */}
+        {/* Center Grid */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
           
-          {/* Main Cart & Search Area */}
           <div className="lg:col-span-3 flex flex-col space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-sm flex items-center gap-2">
@@ -457,7 +486,7 @@ export default function POSPage() {
               </div>
             )}
 
-            {/* Search Input Bar */}
+            {/* Search Bar */}
             <div className="bg-white p-3 rounded-xl border border-slate-300 relative shadow-sm">
               <div className="relative">
                 <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
@@ -519,19 +548,24 @@ export default function POSPage() {
                         <th className="p-2 font-semibold">Batch</th>
                         <th className="p-2 font-semibold">Unit Breakdown</th>
                         <th className="p-2 font-semibold">Qty (Tabs)</th>
-                        <th className="p-2 font-semibold">Price/Tab</th>
+                        <th className="p-2 font-semibold">Disc %</th>
                         <th className="p-2 font-semibold">Total</th>
                         <th className="p-2 text-right font-semibold">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {cart.map((item, idx) => {
+                        const qtyNum = Number(item.quantity) || 0;
                         const perUnitPrice = item.selling_price / item.pack_size;
-                        const fullPacks = Math.floor(item.quantity / item.pack_size);
-                        const looseTabs = item.quantity % item.pack_size;
+                        const gross = perUnitPrice * qtyNum;
+                        const discVal = gross * ((item.discount_percent || 0) / 100);
+                        const netTotal = gross - discVal;
+
+                        const fullPacks = Math.floor(qtyNum / item.pack_size);
+                        const looseTabs = qtyNum % item.pack_size;
                         const breakdownText = fullPacks > 0 
                           ? `${fullPacks} pack${fullPacks > 1 ? 's' : ''} (${fullPacks * item.pack_size})${looseTabs > 0 ? ` + ${looseTabs} loose` : ''}` 
-                          : `${item.quantity} loose tablets`;
+                          : `${qtyNum} loose tablets`;
 
                         return (
                           <tr key={idx} className="hover:bg-slate-50/50">
@@ -544,15 +578,25 @@ export default function POSPage() {
                             </td>
                             <td className="p-2">
                               <input
-                                type="number"
-                                min="1"
+                                type="text"
                                 value={item.quantity}
-                                onChange={(e) => updateQuantity(idx, parseInt(e.target.value) || 1)}
+                                onChange={(e) => handleQuantityChange(idx, e.target.value)}
+                                onBlur={() => handleQuantityBlur(idx)}
                                 className="w-16 px-1.5 py-0.5 border border-slate-300 rounded text-center font-bold"
                               />
                             </td>
-                            <td className="p-2 text-slate-600">₹{perUnitPrice.toFixed(2)}</td>
-                            <td className="p-2 font-bold text-slate-900">₹{(perUnitPrice * item.quantity).toFixed(2)}</td>
+                            <td className="p-2">
+                              <button 
+                                onClick={() => {
+                                  setDiscountModalIndex(idx);
+                                  setItemDiscountInput(item.discount_percent);
+                                }}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-2 py-0.5 rounded font-bold"
+                              >
+                                {item.discount_percent > 0 ? `${item.discount_percent}%` : '+ Disc'}
+                              </button>
+                            </td>
+                            <td className="p-2 font-bold text-slate-900">₹{netTotal.toFixed(2)}</td>
                             <td className="p-2 text-right">
                               <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
                                 <Trash2 className="w-4 h-4" />
@@ -567,7 +611,7 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Bottom Financial Totals Bar */}
+            {/* Bottom Financial Bar */}
             <div className="bg-white p-3 rounded-xl border border-slate-300 grid grid-cols-4 gap-3 text-xs shadow-sm">
               <div>
                 <span className="text-slate-500 block">Subtotal</span>
@@ -593,7 +637,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Right Apollo-Style Action Keypad */}
+          {/* Right Action Keypad */}
           <div className="flex flex-col space-y-3">
             <div className="bg-slate-900 text-white p-2 rounded-xl text-center font-bold text-xs">
               POS Quick Actions
@@ -612,7 +656,17 @@ export default function POSPage() {
               <button onClick={() => router.push('/dashboard/inventory')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
                 <span className="block text-[10px] text-amber-400 font-bold">Alt + F2</span> Inventory Check
               </button>
-              <button onClick={() => alert('Select item for manual discount.')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
+              <button 
+                onClick={() => {
+                  if (cart.length > 0) {
+                    setDiscountModalIndex(0);
+                    setItemDiscountInput(cart[0].discount_percent);
+                  } else {
+                    alert('Add an item to the cart first.');
+                  }
+                }} 
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700"
+              >
                 <span className="block text-[10px] text-amber-400 font-bold">Alt + F3</span> Manual Disc.
               </button>
               <button onClick={() => router.push('/dashboard/invoices')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl text-xs font-semibold text-center border border-slate-700">
@@ -648,7 +702,29 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Show Journals / Recent Bills Modal */}
+      {/* Manual Discount Modal */}
+      {discountModalIndex !== null && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Apply Item Discount</h3>
+            <p className="text-xs text-slate-500">Enter discount percentage for <strong>{cart[discountModalIndex]?.product_name}</strong>:</p>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={itemDiscountInput}
+              onChange={(e) => setItemDiscountInput(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-sm"
+            />
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setDiscountModalIndex(null)} className="px-4 py-2 border rounded-xl text-xs font-semibold">Cancel</button>
+              <button onClick={applyItemDiscount} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-xs">Apply Discount</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show Journals Modal */}
       {showJournalsModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
