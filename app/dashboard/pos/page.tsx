@@ -1203,7 +1203,7 @@ export default function POSPage() {
 
       </div>
 
-      {/* Inventory Check Modal with Double Enter & Arrow Navigation */}
+      {/* Inventory Check Modal with Fully Functional Arrow Keys & Double Enter */}
       {showInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1215,12 +1215,38 @@ export default function POSPage() {
             </div>
 
             <input
+              autoFocus
               type="text"
               placeholder="Search available medicine stock..."
               value={inventorySearch}
               onChange={(e) => {
                 setInventorySearch(e.target.value);
                 setInvSelectedIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (flatInventoryBatches.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      setInvSelectedIndex((prev) => (prev + 1) % flatInventoryBatches.length);
+                    } else {
+                      setInvSelectedIndex((prev) => (prev - 1 + flatInventoryBatches.length) % flatInventoryBatches.length);
+                    }
+                  }
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const currentItem = flatInventoryBatches[invSelectedIndex];
+                  if (currentItem) {
+                    const qtyEl = invQtyInputRefs.current[currentItem.batch.id];
+                    if (document.activeElement !== qtyEl) {
+                      qtyEl?.focus();
+                      qtyEl?.select();
+                    } else {
+                      const qty = Number(invSuggestionQtys[currentItem.batch.id]) || 1;
+                      addToCart(currentItem.prod, currentItem.batch, qty);
+                    }
+                  }
+                }
               }}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none"
             />
@@ -1429,7 +1455,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Partial Return Modal with Net Refund Amount Column */}
+      {/* Partial Return Modal from Journals */}
       {returnModalInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1585,13 +1611,13 @@ export default function POSPage() {
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-0 print:m-0 print:h-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:h-auto">
             
             <style jsx global>{`
               @media print {
                 @page {
                   size: portrait;
-                  margin: 2mm;
+                  margin: 0mm;
                 }
                 body, html {
                   height: 100% !important;
