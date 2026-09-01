@@ -32,6 +32,10 @@ export default function POSPage() {
   const [invSuggestionQtys, setInvSuggestionQtys] = useState<{ [batchId: string]: number | string }>({});
   const invQtyInputRefs = useRef<{ [batchId: string]: HTMLInputElement | null }>({});
 
+  // Custom Software Receipt Print Modal State
+  const [showPrintPromptModal, setShowPrintPromptModal] = useState(false);
+  const [pendingPrintInvoice, setPendingPrintInvoice] = useState<any | null>(null);
+
   // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -96,6 +100,7 @@ export default function POSPage() {
         setDiscountModalIndex(null);
         setReturnModalInvoice(null);
         setSelectedInvoice(null);
+        setShowPrintPromptModal(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -280,6 +285,40 @@ export default function POSPage() {
     }
   }
 
+  // Flattened inventory batch list for keyboard navigation
+  const flatInventoryBatches: { prod: any; batch: any }[] = [];
+  inventoryList.forEach(prod => {
+    prod.product_batches?.forEach((batch: any) => {
+      if (prod.product_name.toLowerCase().includes(inventorySearch.toLowerCase()) || batch.batch_number.toLowerCase().includes(inventorySearch.toLowerCase())) {
+        flatInventoryBatches.push({ prod, batch });
+      }
+    });
+  });
+
+  const handleInventoryKeyDown = (e: React.KeyboardEvent) => {
+    if (flatInventoryBatches.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setInvSelectedIndex((prev) => (prev + 1) % flatInventoryBatches.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setInvSelectedIndex((prev) => (prev - 1 + flatInventoryBatches.length) % flatInventoryBatches.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const currentItem = flatInventoryBatches[invSelectedIndex];
+      if (currentItem) {
+        const qtyEl = invQtyInputRefs.current[currentItem.batch.id];
+        if (document.activeElement !== qtyEl) {
+          qtyEl?.focus();
+          qtyEl?.select();
+        } else {
+          const qty = Number(invSuggestionQtys[currentItem.batch.id]) || 1;
+          addToCart(currentItem.prod, currentItem.batch, qty);
+        }
+      }
+    }
+  };
+
   const addToCart = (product: any, specificBatch?: any, customQty?: number) => {
     let batch = specificBatch;
     if (!batch && product.product_batches && product.product_batches.length > 0) {
@@ -419,7 +458,6 @@ export default function POSPage() {
     return acc + (perUnitPrice * qtyNum);
   }, 0);
 
-  // Subtotal after individual item discounts
   const rawSubtotal = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
@@ -428,7 +466,7 @@ export default function POSPage() {
     return acc + (gross - disc);
   }, 0);
 
-  // Filter items eligible for overall discount (only items with 0% manual discount)
+  // Eligible items for overall discount (items with 0% manual discount)
   const eligibleItemsForOverallDisc = cart.filter(item => (item.discount_percent || 0) === 0);
   const eligibleGrossTotal = eligibleItemsForOverallDisc.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
@@ -592,20 +630,16 @@ export default function POSPage() {
     setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
     setLoading(false);
 
-    // Fetch the newly created sale for receipt printing if user clicks Yes
+    // Fetch newly created invoice and open custom software print modal
     const { data: createdInv } = await supabase
       .from('sales')
       .select('*, sale_items(*, products(product_name), product_batches(batch_number)), customers(customer_name, phone)')
       .eq('id', saleData.id)
       .single();
 
-    if (confirm('Sale completed successfully! Do you want to print the receipt?')) {
-      if (createdInv) {
-        setSelectedInvoice(createdInv);
-        setTimeout(() => {
-          window.print();
-        }, 300);
-      }
+    if (createdInv) {
+      setPendingPrintInvoice(createdInv);
+      setShowPrintPromptModal(true);
     }
 
     setCart([]);
@@ -1159,7 +1193,7 @@ export default function POSPage() {
 
       </div>
 
-      {/* Inventory Check Modal with Double Enter Logic */}
+      {/* Inventory Check Modal with Double Enter & Arrow Navigation */}
       {showInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1174,28 +1208,43 @@ export default function POSPage() {
               type="text"
               placeholder="Search available medicine stock..."
               value={inventorySearch}
-              onChange={(e) => setInventorySearch(e.target.value)}
+              onChange={(e) => {
+                setInventorySearch(e.target.value);
+                setInvSelectedIndex(0);
+              }}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-amber-400 focus:outline-none"
             />
 
-            <div className="max-h-96 overflow-y-auto space-y-3">
-              {inventoryList
-                .filter(p => p.product_name.toLowerCase().includes(inventorySearch.toLowerCase()))
-                .map((prod, pIdx) => (
+            <div 
+              tabIndex={0}
+              onKeyDown={handleInventoryKeyDown}
+              className="max-h-96 overflow-y-auto space-y-3 outline-none focus:ring-2 focus:ring-amber-400 rounded-2xl p-1"
+            >
+              {inventoryList.map((prod) => {
+                const matchingBatches = prod.product_batches?.filter((b: any) => 
+                  prod.product_name.toLowerCase().includes(inventorySearch.toLowerCase()) || 
+                  b.batch_number.toLowerCase().includes(inventorySearch.toLowerCase())
+                ) || [];
+
+                if (matchingBatches.length === 0) return null;
+
+                return (
                   <div key={prod.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col gap-2.5">
                     <div className="flex justify-between font-black text-slate-950 text-sm">
                       <span>{prod.product_name}</span>
                       <span className="text-slate-500 text-xs font-semibold">Brand: {prod.brand || 'N/A'}</span>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {prod.product_batches?.map((batch: any, bIdx: number) => {
-                        const isSelected = pIdx === invSelectedIndex;
+                      {matchingBatches.map((batch: any) => {
+                        const globalIndex = flatInventoryBatches.findIndex(item => item.batch.id === batch.id);
+                        const isSelected = globalIndex === invSelectedIndex;
+
                         return (
                           <div 
                             key={batch.id} 
-                            className={`flex items-center gap-2 p-2 rounded-xl border ${isSelected ? 'bg-amber-100 border-amber-500' : 'bg-white border-slate-200'}`}
+                            className={`flex items-center gap-2 p-2.5 rounded-xl border transition ${isSelected ? 'bg-amber-100 border-amber-500 ring-2 ring-amber-400' : 'bg-white border-slate-200'}`}
                           >
-                            <span className="text-xs font-bold text-slate-700">Batch: {batch.batch_number} (MRP: ₹{batch.mrp} | Stock: {batch.stock_qty})</span>
+                            <span className="text-xs font-bold text-slate-800">Batch: {batch.batch_number} (MRP: ₹{batch.mrp} | Stock: {batch.stock_qty})</span>
                             <input
                               ref={(el) => {
                                 invQtyInputRefs.current[batch.id] = el;
@@ -1203,6 +1252,7 @@ export default function POSPage() {
                               type="number"
                               min="1"
                               value={invSuggestionQtys[batch.id] ?? 1}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => setInvSuggestionQtys({ ...invSuggestionQtys, [batch.id]: e.target.value })}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -1228,7 +1278,8 @@ export default function POSPage() {
                       })}
                     </div>
                   </div>
-                ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1420,6 +1471,41 @@ export default function POSPage() {
         </div>
       )}
 
+      {/* Custom Software Print Prompt Modal */}
+      {showPrintPromptModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-center">
+            <h3 className="text-lg font-black text-slate-950">Sale Completed Successfully!</h3>
+            <p className="text-xs text-slate-500 font-medium">Do you want to print the receipt?</p>
+            <div className="flex justify-center gap-3 pt-2">
+              <button
+                onClick={() => {
+                  setShowPrintPromptModal(false);
+                  setPendingPrintInvoice(null);
+                }}
+                className="px-5 py-2.5 border border-slate-300 rounded-2xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                No
+              </button>
+              <button
+                onClick={() => {
+                  setShowPrintPromptModal(false);
+                  if (pendingPrintInvoice) {
+                    setSelectedInvoice(pendingPrintInvoice);
+                    setTimeout(() => {
+                      window.print();
+                    }, 300);
+                  }
+                }}
+                className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-xs shadow-sm"
+              >
+                Yes, Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
@@ -1429,10 +1515,11 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 3mm;
+                  margin: 2mm;
                 }
                 body, html {
-                  height: 100%;
+                  height: auto !important;
+                  max-height: 100vh !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
