@@ -32,7 +32,7 @@ export default function POSPage() {
   const [invSuggestionQtys, setInvSuggestionQtys] = useState<{ [batchId: string]: number | string }>({});
   const invQtyInputRefs = useRef<{ [batchId: string]: HTMLInputElement | null }>({});
 
-  // Custom Software Modals States
+  // Custom Software Print Modal States
   const [showPrintPromptModal, setShowPrintPromptModal] = useState(false);
   const [pendingPrintInvoice, setPendingPrintInvoice] = useState<any | null>(null);
   const [softwareAlertMsg, setSoftwareAlertMsg] = useState<string | null>(null);
@@ -474,7 +474,6 @@ export default function POSPage() {
     return acc + (gross - disc);
   }, 0);
 
-  // Eligible items for overall discount (items with 0% manual discount)
   const eligibleItemsForOverallDisc = cart.filter(item => (item.discount_percent || 0) === 0);
   const eligibleGrossTotal = eligibleItemsForOverallDisc.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
@@ -721,7 +720,6 @@ export default function POSPage() {
           return;
         }
 
-        // Refund exact net discounted price paid per item
         const unitRefund = Number(item.total_price) / Number(item.quantity_sold);
         totalRefund += unitRefund * returnQty;
 
@@ -1431,7 +1429,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Partial Return Modal from Journals */}
+      {/* Partial Return Modal with Net Refund Amount Column */}
       {returnModalInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1450,34 +1448,60 @@ export default function POSPage() {
                     <th className="p-2.5">Item Name</th>
                     <th className="p-2.5">Batch</th>
                     <th className="p-2.5">Sold Qty</th>
+                    <th className="p-2.5">Refund Rate (Net)</th>
                     <th className="p-2.5">Return Qty</th>
+                    <th className="p-2.5 text-right">Refund Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {returnModalInvoice.sale_items?.map((item: any) => (
-                    <tr key={item.id}>
-                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name}</td>
-                      <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number}</td>
-                      <td className="p-2.5 font-bold">{item.quantity_sold}</td>
-                      <td className="p-2.5">
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.quantity_sold}
-                          value={returnQuantities[item.id] || 0}
-                          onChange={(e) => setReturnQuantities({ ...returnQuantities, [item.id]: Number(e.target.value) })}
-                          className="w-20 px-2.5 py-1 border border-slate-300 rounded-xl font-bold text-center"
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {returnModalInvoice.sale_items?.map((item: any) => {
+                    const soldQty = Number(item.quantity_sold) || 1;
+                    const netItemTotalPrice = Number(item.total_price) || 0;
+                    const unitNetRefund = soldQty > 0 ? netItemTotalPrice / soldQty : 0;
+                    const returnQty = Number(returnQuantities[item.id]) || 0;
+                    const itemRefundTotal = unitNetRefund * returnQty;
+
+                    return (
+                      <tr key={item.id}>
+                        <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name}</td>
+                        <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number}</td>
+                        <td className="p-2.5 font-bold">{soldQty}</td>
+                        <td className="p-2.5 font-mono text-slate-700">₹{unitNetRefund.toFixed(2)}</td>
+                        <td className="p-2.5">
+                          <input
+                            type="number"
+                            min="0"
+                            max={soldQty}
+                            value={returnQuantities[item.id] || 0}
+                            onChange={(e) => setReturnQuantities({ ...returnQuantities, [item.id]: Number(e.target.value) })}
+                            className="w-20 px-2.5 py-1 border border-slate-300 rounded-xl font-bold text-center"
+                          />
+                        </td>
+                        <td className="p-2.5 text-right font-black text-emerald-600 font-mono">
+                          ₹{itemRefundTotal.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex justify-end gap-3 pt-3 border-t">
-              <button onClick={() => setReturnModalInvoice(null)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">Cancel</button>
-              <button onClick={handleProcessReturn} className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-xl text-xs shadow">Confirm Return & Restock</button>
+            <div className="flex justify-between items-center pt-3 border-t">
+              <div className="text-xs font-bold text-slate-700">
+                Total Estimated Refund: <span className="text-sm font-black text-emerald-600 font-mono">
+                  ₹{returnModalInvoice.sale_items?.reduce((acc: number, item: any) => {
+                    const soldQty = Number(item.quantity_sold) || 1;
+                    const unitNetRefund = soldQty > 0 ? (Number(item.total_price) || 0) / soldQty : 0;
+                    const returnQty = Number(returnQuantities[item.id]) || 0;
+                    return acc + (unitNetRefund * returnQty);
+                  }, 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setReturnModalInvoice(null)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">Cancel</button>
+                <button onClick={handleProcessReturn} className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-xl text-xs shadow">Confirm Return & Restock</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1561,17 +1585,17 @@ export default function POSPage() {
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:h-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-0 print:m-0 print:h-auto">
             
             <style jsx global>{`
               @media print {
                 @page {
                   size: portrait;
-                  margin: 5mm;
+                  margin: 2mm;
                 }
                 body, html {
                   height: 100% !important;
-                  max-height: 100% !important;
+                  max-height: 100vh !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
