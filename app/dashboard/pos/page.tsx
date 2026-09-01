@@ -32,9 +32,11 @@ export default function POSPage() {
   const [invSuggestionQtys, setInvSuggestionQtys] = useState<{ [batchId: string]: number | string }>({});
   const invQtyInputRefs = useRef<{ [batchId: string]: HTMLInputElement | null }>({});
 
-  // Custom Software Receipt Print Modal State
+  // Custom Software Modals States
   const [showPrintPromptModal, setShowPrintPromptModal] = useState(false);
   const [pendingPrintInvoice, setPendingPrintInvoice] = useState<any | null>(null);
+  const [softwareAlertMsg, setSoftwareAlertMsg] = useState<string | null>(null);
+  const [softwareConfirmConfig, setSoftwareConfirmConfig] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
@@ -101,6 +103,8 @@ export default function POSPage() {
         setReturnModalInvoice(null);
         setSelectedInvoice(null);
         setShowPrintPromptModal(false);
+        setSoftwareAlertMsg(null);
+        setSoftwareConfirmConfig(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -254,7 +258,7 @@ export default function POSPage() {
       if (data) {
         setSelectedInvoice(data);
       } else {
-        alert('No recent bill found to reprint.');
+        setSoftwareAlertMsg('No recent bill found to reprint.');
       }
     }
   };
@@ -327,7 +331,7 @@ export default function POSPage() {
     }
 
     if (!batch) {
-      alert('No active batch available for this medicine.');
+      setSoftwareAlertMsg('No active batch available for this medicine.');
       return;
     }
 
@@ -341,14 +345,14 @@ export default function POSPage() {
       const updated = [...cart];
       const currentQtyNum = Number(updated[existingIndex].quantity) || 0;
       if (currentQtyNum + addQty > availableQty) {
-        alert(`Stock limit reached! Only ${availableQty} units available.`);
+        setSoftwareAlertMsg(`Stock limit reached! Only ${availableQty} units available.`);
         return;
       }
       updated[existingIndex].quantity = currentQtyNum + addQty;
       setCart(updated);
     } else {
       if (availableQty <= 0 || addQty > availableQty) {
-        alert(`Insufficient stock! Available: ${availableQty}`);
+        setSoftwareAlertMsg(`Insufficient stock! Available: ${availableQty}`);
         return;
       }
       setCart([
@@ -385,7 +389,7 @@ export default function POSPage() {
     const updated = [...cart];
     let qtyNum = parseInt(String(updated[index].quantity)) || 1;
     if (qtyNum > updated[index].available_qty) {
-      alert(`Insufficient stock! Max available is ${updated[index].available_qty}.`);
+      setSoftwareAlertMsg(`Insufficient stock! Max available is ${updated[index].available_qty}.`);
       qtyNum = updated[index].available_qty;
     }
     if (qtyNum < 1) qtyNum = 1;
@@ -398,21 +402,25 @@ export default function POSPage() {
   };
 
   const clearAllCart = () => {
-    if (confirm('Are you sure you want to clear the current billing cart?')) {
-      setCart([]);
-      setCustomerPhone('');
-      setCustomerName('');
-      setCustomerDOB('');
-      setOverallDiscount('');
-      setSplitCash('');
-      setSplitUpi('');
-      setSplitCard('');
-    }
+    setSoftwareConfirmConfig({
+      message: 'Are you sure you want to clear the current billing cart?',
+      onConfirm: () => {
+        setCart([]);
+        setCustomerPhone('');
+        setCustomerName('');
+        setCustomerDOB('');
+        setOverallDiscount('');
+        setSplitCash('');
+        setSplitUpi('');
+        setSplitCard('');
+        setSoftwareConfirmConfig(null);
+      }
+    });
   };
 
   const parkTransaction = () => {
     if (cart.length === 0) {
-      alert('Cart is empty. Nothing to park.');
+      setSoftwareAlertMsg('Cart is empty. Nothing to park.');
       return;
     }
     const parkedObj = {
@@ -429,7 +437,7 @@ export default function POSPage() {
     setCustomerName('');
     setCustomerDOB('');
     setOverallDiscount('');
-    alert('Transaction successfully parked!');
+    setSoftwareAlertMsg('Transaction successfully parked!');
   };
 
   const resumeParkedTransaction = (parked: any) => {
@@ -502,7 +510,7 @@ export default function POSPage() {
   const handleCompleteSale = async () => {
     if (cart.length === 0) return;
     if (!customerPhone || customerPhone.length !== 10) {
-      alert('Sale cannot be completed without a valid 10-digit customer mobile number!');
+      setSoftwareAlertMsg('Sale cannot be completed without a valid 10-digit customer mobile number!');
       return;
     }
 
@@ -516,7 +524,7 @@ export default function POSPage() {
       if (paymentMode === 'card') finalCard = finalTotal;
     } else {
       if (Math.abs(totalPaidSplit - finalTotal) > 1) {
-        alert(`Split payment total (₹${totalPaidSplit}) must match Final Payable (₹${finalTotal.toFixed(2)})!`);
+        setSoftwareAlertMsg(`Split payment total (₹${totalPaidSplit}) must match Final Payable (₹${finalTotal.toFixed(2)})!`);
         return;
       }
     }
@@ -630,7 +638,6 @@ export default function POSPage() {
     setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
     setLoading(false);
 
-    // Fetch newly created invoice and open custom software print modal
     const { data: createdInv } = await supabase
       .from('sales')
       .select('*, sale_items(*, products(product_name), product_batches(batch_number)), customers(customer_name, phone)')
@@ -653,39 +660,43 @@ export default function POSPage() {
   };
 
   const handleCancelInvoice = async (invoiceId: string) => {
-    if (!confirm('Are you sure you want to CANCEL this entire invoice? This will void the bill and restore all items into inventory.')) return;
+    setSoftwareConfirmConfig({
+      message: 'Are you sure you want to CANCEL this entire invoice? This will void the bill and restore all items into inventory.',
+      onConfirm: async () => {
+        setSoftwareConfirmConfig(null);
+        const { data: items } = await supabase
+          .from('sale_items')
+          .select('*')
+          .eq('sale_id', invoiceId);
 
-    const { data: items } = await supabase
-      .from('sale_items')
-      .select('*')
-      .eq('sale_id', invoiceId);
+        if (items) {
+          for (const item of items) {
+            if (item.batch_id && item.quantity_sold) {
+              const { data: batch } = await supabase
+                .from('product_batches')
+                .select('stock_qty')
+                .eq('id', item.batch_id)
+                .single();
 
-    if (items) {
-      for (const item of items) {
-        if (item.batch_id && item.quantity_sold) {
-          const { data: batch } = await supabase
-            .from('product_batches')
-            .select('stock_qty')
-            .eq('id', item.batch_id)
-            .single();
-
-          if (batch) {
-            await supabase
-              .from('product_batches')
-              .update({ stock_qty: batch.stock_qty + item.quantity_sold })
-              .eq('id', item.batch_id);
+              if (batch) {
+                await supabase
+                  .from('product_batches')
+                  .update({ stock_qty: batch.stock_qty + item.quantity_sold })
+                  .eq('id', item.batch_id);
+              }
+            }
           }
         }
+
+        await supabase
+          .from('sales')
+          .update({ payment_status: 'Cancelled', final_amount: 0 })
+          .eq('id', invoiceId);
+
+        setSoftwareAlertMsg('Invoice successfully cancelled and stock restored!');
+        fetchJournals();
       }
-    }
-
-    await supabase
-      .from('sales')
-      .update({ payment_status: 'Cancelled', final_amount: 0 })
-      .eq('id', invoiceId);
-
-    alert('Invoice successfully cancelled and stock restored!');
-    fetchJournals();
+    });
   };
 
   const openReturnModal = (inv: any) => {
@@ -706,10 +717,11 @@ export default function POSPage() {
       const returnQty = Number(returnQuantities[item.id]) || 0;
       if (returnQty > 0) {
         if (returnQty > item.quantity_sold) {
-          alert(`Return quantity for ${item.products?.product_name} cannot exceed sold quantity (${item.quantity_sold}).`);
+          setSoftwareAlertMsg(`Return quantity for ${item.products?.product_name} cannot exceed sold quantity (${item.quantity_sold}).`);
           return;
         }
 
+        // Refund exact net discounted price paid per item
         const unitRefund = Number(item.total_price) / Number(item.quantity_sold);
         totalRefund += unitRefund * returnQty;
 
@@ -746,7 +758,7 @@ export default function POSPage() {
       })
       .eq('id', returnModalInvoice.id);
 
-    alert(`Return processed successfully! Refund amount: ₹${totalRefund.toFixed(2)}`);
+    setSoftwareAlertMsg(`Return processed successfully! Refund amount: ₹${totalRefund.toFixed(2)}`);
     setReturnModalInvoice(null);
     fetchJournals();
   };
@@ -1105,7 +1117,7 @@ export default function POSPage() {
                   setDiscountModalIndex(0);
                   setItemDiscountInput(cart[0].discount_percent);
                 } else {
-                  alert('Add an item to the cart first.');
+                  setSoftwareAlertMsg('Add an item to the cart first.');
                 }
               }} 
               className="bg-white hover:bg-slate-50 text-slate-800 p-3 rounded-2xl text-xs font-bold text-center border border-slate-200 shadow-sm"
@@ -1506,20 +1518,60 @@ export default function POSPage() {
         </div>
       )}
 
+      {/* Software Alert Modal */}
+      {softwareAlertMsg && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-center">
+            <h3 className="text-lg font-black text-slate-950">System Notification</h3>
+            <p className="text-xs text-slate-600 font-medium">{softwareAlertMsg}</p>
+            <button
+              onClick={() => setSoftwareAlertMsg(null)}
+              className="w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-xs shadow-sm"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Software Confirm Modal */}
+      {softwareConfirmConfig && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-center">
+            <h3 className="text-lg font-black text-slate-950">Please Confirm</h3>
+            <p className="text-xs text-slate-600 font-medium">{softwareConfirmConfig.message}</p>
+            <div className="flex justify-center gap-3 pt-2">
+              <button
+                onClick={() => setSoftwareConfirmConfig(null)}
+                className="px-5 py-2.5 border border-slate-300 rounded-2xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={softwareConfirmConfig.onConfirm}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl text-xs shadow-sm"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-0 print:m-0">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:h-auto">
             
             <style jsx global>{`
               @media print {
                 @page {
                   size: portrait;
-                  margin: 2mm;
+                  margin: 5mm;
                 }
                 body, html {
-                  height: auto !important;
-                  max-height: 100vh !important;
+                  height: 100% !important;
+                  max-height: 100% !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
@@ -1532,16 +1584,18 @@ export default function POSPage() {
                   visibility: visible;
                 }
                 .fixed.inset-0 {
-                  position: absolute !important;
+                  position: fixed !important;
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: auto !important;
+                  height: 100% !important;
                   background: white !important;
-                  display: block !important;
+                  display: flex !important;
+                  align-items: flex-start !important;
+                  justify-content: center !important;
                   page-break-after: avoid !important;
                   page-break-inside: avoid !important;
-                  overflow: visible !important;
+                  overflow: hidden !important;
                 }
                 .print\\:hidden {
                   display: none !important;
