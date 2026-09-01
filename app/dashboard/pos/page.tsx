@@ -28,6 +28,10 @@ export default function POSPage() {
   const [suggestionQtys, setSuggestionQtys] = useState<{ [productId: string]: number | string }>({});
   const qtyInputRefs = useRef<{ [productId: string]: HTMLInputElement | null }>({});
 
+  // Inventory Modal Qty Refs & States
+  const [invSuggestionQtys, setInvSuggestionQtys] = useState<{ [batchId: string]: number | string }>({});
+  const invQtyInputRefs = useRef<{ [batchId: string]: HTMLInputElement | null }>({});
+
   // Metadata & Overall Discount
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -50,6 +54,7 @@ export default function POSPage() {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [inventoryList, setInventoryList] = useState<any[]>([]);
   const [inventorySearch, setInventorySearch] = useState('');
+  const [invSelectedIndex, setInvSelectedIndex] = useState(0);
 
   // Journals & Invoice Modals
   const [showJournalsModal, setShowJournalsModal] = useState(false);
@@ -260,7 +265,17 @@ export default function POSPage() {
         .select('*, product_batches(*)')
         .eq('organization_id', orgId);
 
-      if (data) setInventoryList(data);
+      if (data) {
+        setInventoryList(data);
+        const initInvQtys: { [id: string]: number } = {};
+        data.forEach((p: any) => {
+          p.product_batches?.forEach((b: any) => {
+            initInvQtys[b.id] = 1;
+          });
+        });
+        setInvSuggestionQtys(initInvQtys);
+      }
+      setInvSelectedIndex(0);
       setShowInventoryModal(true);
     }
   }
@@ -277,7 +292,7 @@ export default function POSPage() {
       return;
     }
 
-    const addQty = customQty || Number(suggestionQtys[product.id]) || 1;
+    const addQty = customQty || Number(suggestionQtys[product.id]) || Number(invSuggestionQtys[batch.id]) || 1;
     const existingIndex = cart.findIndex(item => item.id === product.id && item.batch_number === batch.batch_number);
     const packSize = product.units_per_pack || 15;
     const sellingPrice = batch.mrp || batch.selling_rate || 100;
@@ -397,13 +412,14 @@ export default function POSPage() {
     }
   };
 
-  // Financial Calculations
+  // Financial Calculations with Manual vs Overall Discount Exclusion Logic
   const grossTotalWithoutAnyDiscounts = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
     return acc + (perUnitPrice * qtyNum);
   }, 0);
 
+  // Subtotal after individual item discounts
   const rawSubtotal = cart.reduce((acc, item) => {
     const qtyNum = Number(item.quantity) || 0;
     const perUnitPrice = item.selling_price / item.pack_size;
@@ -412,8 +428,16 @@ export default function POSPage() {
     return acc + (gross - disc);
   }, 0);
 
+  // Filter items eligible for overall discount (only items with 0% manual discount)
+  const eligibleItemsForOverallDisc = cart.filter(item => (item.discount_percent || 0) === 0);
+  const eligibleGrossTotal = eligibleItemsForOverallDisc.reduce((acc, item) => {
+    const qtyNum = Number(item.quantity) || 0;
+    const perUnitPrice = item.selling_price / item.pack_size;
+    return acc + (perUnitPrice * qtyNum);
+  }, 0);
+
   const overallDiscNum = Number(overallDiscount) || 0;
-  const overallDiscVal = rawSubtotal * (overallDiscNum / 100);
+  const overallDiscVal = eligibleGrossTotal * (overallDiscNum / 100);
   const subtotal = rawSubtotal - overallDiscVal;
   
   const totalDiscountAmount = grossTotalWithoutAnyDiscounts - subtotal;
@@ -424,7 +448,7 @@ export default function POSPage() {
     const gross = perUnitPrice * qtyNum;
     const disc = gross * ((item.discount_percent || 0) / 100);
     let netItemTotal = gross - disc;
-    if (rawSubtotal > 0) {
+    if ((item.discount_percent || 0) === 0 && eligibleGrossTotal > 0) {
       netItemTotal -= netItemTotal * (overallDiscNum / 100);
     }
     return acc + (netItemTotal * item.gst_percentage) / (100 + item.gst_percentage);
@@ -525,8 +549,8 @@ export default function POSPage() {
       const itemDisc = gross * ((item.discount_percent || 0) / 100);
       let itemNet = gross - itemDisc;
       
-      if (rawSubtotal > 0 && overallDiscNum > 0) {
-        const proportion = itemNet / rawSubtotal;
+      if ((item.discount_percent || 0) === 0 && eligibleGrossTotal > 0 && overallDiscNum > 0) {
+        const proportion = itemNet / eligibleGrossTotal;
         itemNet -= overallDiscVal * proportion;
       }
 
@@ -566,6 +590,24 @@ export default function POSPage() {
     }
 
     setSuccessMsg(`Sale successful! Invoice: ${invoiceNumber}`);
+    setLoading(false);
+
+    // Fetch the newly created sale for receipt printing if user clicks Yes
+    const { data: createdInv } = await supabase
+      .from('sales')
+      .select('*, sale_items(*, products(product_name), product_batches(batch_number)), customers(customer_name, phone)')
+      .eq('id', saleData.id)
+      .single();
+
+    if (confirm('Sale completed successfully! Do you want to print the receipt?')) {
+      if (createdInv) {
+        setSelectedInvoice(createdInv);
+        setTimeout(() => {
+          window.print();
+        }, 300);
+      }
+    }
+
     setCart([]);
     setCustomerPhone('');
     setCustomerName('');
@@ -574,7 +616,6 @@ export default function POSPage() {
     setSplitCash('');
     setSplitUpi('');
     setSplitCard('');
-    setLoading(false);
   };
 
   const handleCancelInvoice = async (invoiceId: string) => {
@@ -897,17 +938,16 @@ export default function POSPage() {
                       const qtyNum = Number(item.quantity) || 0;
                       const perUnitPrice = item.selling_price / item.pack_size;
                       const gross = perUnitPrice * qtyNum;
-                      let discAmt = gross * ((item.discount_percent || 0) / 100);
-                      
-                      if (rawSubtotal > 0 && overallDiscNum > 0) {
-                        const itemGrossNet = gross - discAmt;
-                        const propShare = itemGrossNet / rawSubtotal;
-                        const overallShare = overallDiscVal * propShare;
-                        discAmt += overallShare;
+                      const itemDiscVal = gross * ((item.discount_percent || 0) / 100);
+                      let totalItemDisc = itemDiscVal;
+
+                      if ((item.discount_percent || 0) === 0 && eligibleGrossTotal > 0 && overallDiscNum > 0) {
+                        const proportion = gross / eligibleGrossTotal;
+                        totalItemDisc += overallDiscVal * proportion;
                       }
 
-                      const netTotal = Math.max(0, gross - discAmt);
-                      const discPct = gross > 0 ? ((discAmt / gross) * 100).toFixed(0) : '0';
+                      const netTotal = Math.max(0, gross - totalItemDisc);
+                      const discPct = gross > 0 ? ((totalItemDisc / gross) * 100).toFixed(0) : '0';
 
                       const fullPacks = Math.floor(qtyNum / item.pack_size);
                       const looseTabs = qtyNum % item.pack_size;
@@ -935,8 +975,17 @@ export default function POSPage() {
                           </td>
                           <td className="p-2.5 font-mono text-slate-700">₹{perUnitPrice.toFixed(2)}</td>
                           <td className="p-2.5 font-mono font-bold text-slate-950">₹{gross.toFixed(2)}</td>
-                          <td className="p-2.5 font-mono text-red-600 font-bold">
-                            {discAmt > 0 ? `-₹${discAmt.toFixed(2)} (${discPct}%)` : '—'}
+                          <td className="p-2.5 font-mono text-red-600 font-bold flex items-center gap-1.5">
+                            <span>{totalItemDisc > 0 ? `-₹${totalItemDisc.toFixed(2)} (${discPct}%)` : '—'}</span>
+                            <button 
+                              onClick={() => {
+                                setDiscountModalIndex(idx);
+                                setItemDiscountInput(item.discount_percent);
+                              }}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-bold"
+                            >
+                              Edit
+                            </button>
                           </td>
                           <td className="p-2.5 font-black text-slate-950">₹{netTotal.toFixed(2)}</td>
                           <td className="p-2.5 text-right">
@@ -1110,13 +1159,13 @@ export default function POSPage() {
 
       </div>
 
-      {/* Inventory Check Modal */}
+      {/* Inventory Check Modal with Double Enter Logic */}
       {showInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-black text-slate-950 flex items-center gap-2">
-                <Package className="w-5 h-5 text-amber-500" /> Live Inventory & Batch Check
+                <Package className="w-5 h-5 text-amber-500" /> Live Inventory & Batch Check (Use Arrow Keys & Enter)
               </h3>
               <button onClick={() => setShowInventoryModal(false)} className="text-slate-500 hover:text-slate-900 font-bold">✕</button>
             </div>
@@ -1132,22 +1181,51 @@ export default function POSPage() {
             <div className="max-h-96 overflow-y-auto space-y-3">
               {inventoryList
                 .filter(p => p.product_name.toLowerCase().includes(inventorySearch.toLowerCase()))
-                .map((prod) => (
+                .map((prod, pIdx) => (
                   <div key={prod.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col gap-2.5">
                     <div className="flex justify-between font-black text-slate-950 text-sm">
                       <span>{prod.product_name}</span>
                       <span className="text-slate-500 text-xs font-semibold">Brand: {prod.brand || 'N/A'}</span>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {prod.product_batches?.map((batch: any) => (
-                        <button
-                          key={batch.id}
-                          onClick={() => addToCart(prod, batch, 1)}
-                          className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-3.5 py-2 rounded-xl shadow-sm transition"
-                        >
-                          Batch: {batch.batch_number} | Exp: {batch.expiry_date} | MRP: ₹{batch.mrp} | Stock: {batch.stock_qty} (Click to Add)
-                        </button>
-                      ))}
+                      {prod.product_batches?.map((batch: any, bIdx: number) => {
+                        const isSelected = pIdx === invSelectedIndex;
+                        return (
+                          <div 
+                            key={batch.id} 
+                            className={`flex items-center gap-2 p-2 rounded-xl border ${isSelected ? 'bg-amber-100 border-amber-500' : 'bg-white border-slate-200'}`}
+                          >
+                            <span className="text-xs font-bold text-slate-700">Batch: {batch.batch_number} (MRP: ₹{batch.mrp} | Stock: {batch.stock_qty})</span>
+                            <input
+                              ref={(el) => {
+                                invQtyInputRefs.current[batch.id] = el;
+                              }}
+                              type="number"
+                              min="1"
+                              value={invSuggestionQtys[batch.id] ?? 1}
+                              onChange={(e) => setInvSuggestionQtys({ ...invSuggestionQtys, [batch.id]: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const qty = Number(invSuggestionQtys[batch.id]) || 1;
+                                  addToCart(prod, batch, qty);
+                                }
+                              }}
+                              className="w-12 text-center font-black text-xs bg-slate-50 border border-slate-300 rounded-lg py-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const qty = Number(invSuggestionQtys[batch.id]) || 1;
+                                addToCart(prod, batch, qty);
+                              }}
+                              className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow-sm"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -1188,12 +1266,12 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Manual Discount Modal */}
+      {/* Manual Discount Modal with Exclusion Option */}
       {discountModalIndex !== null && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <h3 className="text-lg font-black text-slate-950">Apply Item Discount</h3>
-            <p className="text-xs text-slate-500 font-medium">Enter discount percentage for <strong>{cart[discountModalIndex]?.product_name}</strong>:</p>
+            <p className="text-xs text-slate-500 font-medium">Enter discount percentage for <strong>{cart[discountModalIndex]?.product_name}</strong> (Enter 0 to exclude from overall discount or apply specific %):</p>
             <input
               type="number"
               min="0"
@@ -1351,13 +1429,14 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 4mm;
+                  margin: 3mm;
                 }
                 body, html {
                   height: 100%;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
+                  -webkit-print-color-adjust: exact;
                 }
                 body * {
                   visibility: hidden;
@@ -1370,12 +1449,12 @@ export default function POSPage() {
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: 100% !important;
+                  height: auto !important;
                   background: white !important;
                   display: block !important;
                   page-break-after: avoid !important;
                   page-break-inside: avoid !important;
-                  overflow: hidden !important;
+                  overflow: visible !important;
                 }
                 .print\\:hidden {
                   display: none !important;
