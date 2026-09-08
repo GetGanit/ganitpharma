@@ -28,7 +28,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Create organization record as pending (is_active = false) via RPC
+    // 1. Create organization record as pending and pass the chosen password
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -36,6 +36,7 @@ export default function OnboardingPage() {
       p_phone: formData.phone,
       p_gstin: formData.gstin,
       p_email: formData.email,
+      p_password: formData.password,
     });
 
     if (orgError || !orgId) {
