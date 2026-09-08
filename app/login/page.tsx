@@ -58,7 +58,10 @@ export default function LoginPage() {
       .eq('id', authData.user.id)
       .single();
 
-    if (profile?.organizations?.is_active === false) {
+    const orgData = profile?.organizations as any;
+    const isActive = Array.isArray(orgData) ? orgData[0]?.is_active : orgData?.is_active;
+
+    if (isActive === false) {
       await supabase.auth.signOut();
       setError('Your workspace is pending admin activation.');
       setLoading(false);
