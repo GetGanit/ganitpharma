@@ -32,7 +32,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // Strictly fetch the profile mapped to this specific user ID
+      // Strictly fetch mapping from profiles table using the unique authenticated user ID
       const { data: profileData } = await supabase
         .from('profiles')
         .select('organization_id')
@@ -40,7 +40,12 @@ export default function SettingsPage() {
         .single();
 
       if (profileData?.organization_id) {
-        const { data } = await supabase.from('organizations').select('*').eq('id', profileData.organization_id).single();
+        const { data } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', profileData.organization_id)
+          .single();
+
         if (data) {
           setProfile(prev => ({
             ...prev,
@@ -49,19 +54,6 @@ export default function SettingsPage() {
             gstin: data.gstin || '',
             phone: data.phone || '',
             email: data.email || user.email || '',
-            address: data.address || '',
-          }));
-        }
-      } else if (user.email) {
-        const { data } = await supabase.from('organizations').select('*').eq('email', user.email).single();
-        if (data) {
-          setProfile(prev => ({
-            ...prev,
-            tradingName: data.name || '',
-            legalName: data.owner_name || '',
-            gstin: data.gstin || '',
-            phone: data.phone || '',
-            email: data.email || '',
             address: data.address || '',
           }));
         }
@@ -82,8 +74,7 @@ export default function SettingsPage() {
       .eq('id', user.id)
       .single();
 
-    const orgId = profileData?.organization_id;
-    if (!orgId) return;
+    if (!profileData?.organization_id) return;
 
     const { error } = await supabase
       .from('organizations')
@@ -94,7 +85,7 @@ export default function SettingsPage() {
         phone: profile.phone,
         address: profile.address,
       })
-      .eq('id', orgId);
+      .eq('id', profileData.organization_id);
 
     if (!error) {
       setSuccess(true);
