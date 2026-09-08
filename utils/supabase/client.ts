@@ -6,7 +6,7 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookieOptions: {
-        name: 'sb-auth-token',
+        name: 'ganit-auth-token',
       },
     }
   );
