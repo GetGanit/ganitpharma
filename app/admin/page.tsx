@@ -81,14 +81,18 @@ export default function SuperAdminPage() {
     setError(null);
     setSuccessMsg(null);
     
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail('durgabm2001@gmail.com', {
-      redirectTo: `${window.location.origin}/auth/update-password`,
-    });
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail('durgabm2001@gmail.com', {
+        redirectTo: `${window.location.origin}/auth/update-password`,
+      });
 
-    if (resetError) {
-      setError(resetError.message);
-    } else {
-      setSuccessMsg('Recovery link sent to durgabm2001@gmail.com. Check your inbox.');
+      if (resetError) {
+        setError(resetError.message);
+      } else {
+        setSuccessMsg('Recovery link sent to durgabm2001@gmail.com. Check your inbox.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Network request failed. Check Supabase connection.');
     }
   };
 
@@ -110,7 +114,6 @@ export default function SuperAdminPage() {
     return <div className="min-h-screen bg-[#0f172a] flex items-center justify-center text-slate-400 text-sm font-medium">Verifying owner credentials...</div>;
   }
 
-  // Standalone SellerMastery Style Restricted Login Screen (Completely isolated from tenant flows)
   if (!unlocked) {
     return (
       <div className="min-h-screen bg-[#0f172a] text-slate-100 flex items-center justify-center p-4">
@@ -179,7 +182,6 @@ export default function SuperAdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
-      {/* Admin Top Header */}
       <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
           <button
@@ -200,14 +202,12 @@ export default function SuperAdminPage() {
         </div>
       </header>
 
-      {/* Main Body */}
       <div className="p-8 max-w-7xl w-full mx-auto space-y-8 flex-1">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">Platform Analytics & Software Directory</h1>
           <p className="text-xs text-slate-500 font-medium">Independent supervision of software purchases, license revenue, and global user directory.</p>
         </div>
 
-        {/* Metrics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between text-slate-500 text-xs font-bold">
@@ -239,7 +239,6 @@ export default function SuperAdminPage() {
           </div>
         </div>
 
-        {/* Tenants Directory Table with Access Control */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 bg-slate-50 border-b border-slate-200 font-black text-slate-900 text-xs flex justify-between items-center">
             <span>Software Purchases & User Directory ({organizations.length})</span>
