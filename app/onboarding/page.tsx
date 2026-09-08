@@ -28,23 +28,17 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Create organization record first
-    const { data: orgData, error: orgError } = await supabase
-      .from('organizations')
-      .insert([
-        {
-          name: formData.pharmacyName,
-          owner_name: formData.ownerName,
-          address: formData.address,
-          phone: formData.phone,
-          email: formData.email,
-          gstin: formData.gstin,
-        },
-      ])
-      .select()
-      .single();
+    // 1. Create organization securely via database RPC function to bypass RLS safely
+    const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
+      p_pharmacy_name: formData.pharmacyName,
+      p_owner_name: formData.ownerName,
+      p_address: formData.address,
+      p_phone: formData.phone,
+      p_gstin: formData.gstin,
+      p_email: formData.email,
+    });
 
-    if (orgError || !orgData) {
+    if (orgError || !orgId) {
       setError(orgError?.message || 'Failed to create organization.');
       setLoading(false);
       return;
@@ -56,7 +50,7 @@ export default function OnboardingPage() {
       password: formData.password,
       options: {
         data: {
-          organization_id: orgData.id,
+          organization_id: orgId,
         },
       },
     });
