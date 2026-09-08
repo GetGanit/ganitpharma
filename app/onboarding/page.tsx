@@ -28,6 +28,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
+    // 1. Create organization record via database RPC function
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -43,6 +44,7 @@ export default function OnboardingPage() {
       return;
     }
 
+    // 2. Sign up the user in Supabase Auth and inject organization_id
     const { error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
@@ -59,7 +61,12 @@ export default function OnboardingPage() {
       return;
     }
 
-    await supabase.auth.signOut();
+    // 3. Clear local session so they aren't logged into the dashboard prematurely
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      // Non-blocking fallback
+    }
 
     setLoading(false);
     router.push('/pending-activation');
