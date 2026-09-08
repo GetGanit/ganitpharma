@@ -98,16 +98,31 @@ export default function SuperAdminPage() {
 
   const toggleTenantStatus = async (orgId: string, currentStatus: boolean) => {
     const newStatus = !currentStatus;
-    const { error } = await supabase
-      .from('organizations')
-      .update({ is_active: newStatus })
-      .eq('id', orgId);
 
-    if (!error) {
-      loadAdminData();
+    if (newStatus === true) {
+      // Call RPC to activate and provision auth user securely with their chosen password
+      const { error: rpcError } = await supabase.rpc('activate_organization_and_create_user', {
+        p_org_id: orgId,
+      });
+
+      if (rpcError) {
+        alert('Failed to activate and create user: ' + rpcError.message);
+        return;
+      }
     } else {
-      alert('Failed to update tenant status: ' + error.message);
+      // If revoking access
+      const { error } = await supabase
+        .from('organizations')
+        .update({ is_active: false })
+        .eq('id', orgId);
+
+      if (error) {
+        alert('Failed to update tenant status: ' + error.message);
+        return;
+      }
     }
+
+    loadAdminData();
   };
 
   const deleteOrganization = async (orgId: string, orgName: string) => {
