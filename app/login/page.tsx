@@ -2,21 +2,39 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Password Reset Mode State
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+
+  // Rate Limiting Security States
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 
   const router = useRouter();
   const supabase = createClient();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    setSuccessMsg(null);
+
+    // Rate Limit Check
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const remainingSecs = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      setError(`Too many failed attempts. Please wait ${remainingSecs}s before trying again.`);
+      return;
+    }
+
+    setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -24,10 +42,54 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setError(error.message);
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      
+      // Trigger 30s lockout after 5 failed attempts
+      if (newAttempts >= 5) {
+        setLockoutUntil(Date.now() + 30000);
+        setError('Security Lockout: 5 failed login attempts. Locked for 30 seconds.');
+      } else {
+        setError(`${error.message} (Attempt ${newAttempts}/5)`);
+      }
       setLoading(false);
     } else {
+      setFailedAttempts(0);
       router.push('/dashboard');
+    }
+  };
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+    setLoading(true);
+
+    if (!email || !newPassword) {
+      setError('Please provide both your email and new password.');
+      setLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      setLoading(false);
+      return;
+    }
+
+    // Direct password update via Supabase Admin API / RPC or session update
+    const { error: resetError } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (resetError) {
+      setError(`Password reset failed: ${resetError.message}. Ensure you are logged in or check your credentials.`);
+      setLoading(false);
+    } else {
+      setSuccessMsg('Password successfully updated! You can now sign in.');
+      setIsResetMode(false);
+      setPassword(newPassword);
+      setLoading(false);
     }
   };
 
@@ -38,7 +100,7 @@ export default function LoginPage() {
           Ganit<span className="text-amber-400">Pharma</span> Portal
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Sign in to access your pharmacy operations & POS
+          {isResetMode ? 'Reset your pharmacy portal password' : 'Sign in to access your pharmacy operations & POS'}
         </p>
       </div>
 
@@ -51,51 +113,130 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Email Address</label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
-                  placeholder="pharmacist@yourpharmacy.in"
-                />
-              </div>
+          {successMsg && (
+            <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{successMsg}</span>
             </div>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700">Password</label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
+          {!isResetMode ? (
+            <form className="space-y-6" onSubmit={handleLogin}>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Email Address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                    placeholder="pharmacist@yourpharmacy.in"
+                  />
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
-                  placeholder="••••••••"
-                />
               </div>
-            </div>
 
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-400 transition"
-              >
-                {loading ? 'Signing in...' : 'Sign In to Dashboard'} <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </form>
+              <div>
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-slate-700">Password</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResetMode(true);
+                      setError(null);
+                      setSuccessMsg(null);
+                    }}
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-700 underline"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loading || (lockoutUntil !== null && Date.now() < lockoutUntil)}
+                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-400 transition disabled:opacity-50"
+                >
+                  {loading ? 'Signing in...' : 'Sign In to Dashboard'} <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form className="space-y-6" onSubmit={handlePasswordReset}>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Registered Email Address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                    placeholder="pharmacist@yourpharmacy.in"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700">New Password</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                    placeholder="Enter new password (min 6 chars)"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResetMode(false);
+                    setError(null);
+                    setSuccessMsg(null);
+                  }}
+                  className="w-1/2 py-3 px-4 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Back to Sign In
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-1/2 flex justify-center items-center gap-1 py-3 px-4 border border-transparent rounded-xl shadow-sm text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition disabled:opacity-50"
+                >
+                  {loading ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-6 text-center">
             <p className="text-xs text-slate-500">
