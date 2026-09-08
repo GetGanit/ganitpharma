@@ -28,7 +28,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Create organization record via RPC
+    // 1. Create organization record as pending (is_active = false) via RPC
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -44,7 +44,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    // 2. Create Supabase Auth user and link organization_id
+    // 2. Automatically create the Supabase Auth user linked to this organization
     const { error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
