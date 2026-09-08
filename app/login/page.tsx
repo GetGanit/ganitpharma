@@ -51,17 +51,15 @@ export default function LoginPage() {
       return;
     }
 
-    // Check if the user's organization is active
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id, organizations(is_active)')
-      .eq('id', authData.user.id)
+    // Direct check on organizations table using email
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('is_active')
+      .eq('email', authData.user.email)
       .single();
 
-    const orgData = profile?.organizations as any;
-    const isActive = Array.isArray(orgData) ? orgData[0]?.is_active : orgData?.is_active;
-
-    if (isActive === false) {
+    // If organization is found and not active, block access
+    if (org && org.is_active === false) {
       await supabase.auth.signOut();
       setError('Your workspace is pending admin activation.');
       setLoading(false);
