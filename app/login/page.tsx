@@ -32,6 +32,9 @@ export default function LoginPage() {
 
     setLoading(true);
 
+    // Clear any lingering session cache to ensure clean tenant context isolation
+    await supabase.auth.signOut();
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
