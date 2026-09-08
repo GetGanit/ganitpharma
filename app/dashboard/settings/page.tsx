@@ -9,7 +9,6 @@ export const dynamic = 'force-dynamic';
 export default async function SettingsPage() {
   const cookieStore = cookies();
 
-  // Create an isolated server-side client per request using request cookies
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -28,7 +27,6 @@ export default async function SettingsPage() {
     redirect('/login');
   }
 
-  // Fetch profile mapped strictly to this request's authenticated user ID
   const { data: profileData } = await supabase
     .from('profiles')
     .select('organization_id')
@@ -54,7 +52,7 @@ export default async function SettingsPage() {
       {
         cookies: {
           getAll() { return cStore.getAll(); },
-          setAll(cookiesToSet) {
+          setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
             cookiesToSet.forEach(({ name, value, options }) => cStore.set(name, value, options));
           },
         },
