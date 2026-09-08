@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { ShieldAlert, Building2, Users, IndianRupee, ArrowLeft, CheckCircle2, Lock, Mail, Key, Power } from 'lucide-react';
+import { ShieldAlert, Building2, Users, IndianRupee, ArrowLeft, CheckCircle2, Lock, Mail, Key, Power, Trash2 } from 'lucide-react';
 
 export default function SuperAdminPage() {
   const [loading, setLoading] = useState(true);
@@ -107,6 +107,23 @@ export default function SuperAdminPage() {
       loadAdminData();
     } else {
       alert('Failed to update tenant status: ' + error.message);
+    }
+  };
+
+  const deleteOrganization = async (orgId: string, orgName: string) => {
+    if (!confirm(`Are you sure you want to delete ${orgName}? This action cannot be undone.`)) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from('organizations')
+      .delete()
+      .eq('id', orgId);
+
+    if (!error) {
+      loadAdminData();
+    } else {
+      alert('Failed to delete organization: ' + error.message);
     }
   };
 
@@ -277,16 +294,25 @@ export default function SuperAdminPage() {
                       <td className="p-3.5 font-mono text-slate-600">{org.gstin || 'N/A'}</td>
                       <td className="p-3.5 text-slate-500">{new Date(org.created_at).toLocaleString()}</td>
                       <td className="p-3.5 text-right">
-                        <button
-                          onClick={() => toggleTenantStatus(org.id, isActive)}
-                          className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition shadow-sm flex items-center gap-1 ml-auto cursor-pointer ${
-                            isActive 
-                              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
-                              : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                          }`}
-                        >
-                          <Power className="w-3 h-3" /> {isActive ? 'Active (Revoke)' : 'Pending Approval (Activate)'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => toggleTenantStatus(org.id, isActive)}
+                            className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition shadow-sm flex items-center gap-1 cursor-pointer ${
+                              isActive 
+                                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
+                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                            }`}
+                          >
+                            <Power className="w-3 h-3" /> {isActive ? 'Active (Revoke)' : 'Pending Approval (Activate)'}
+                          </button>
+                          <button
+                            onClick={() => deleteOrganization(org.id, org.name)}
+                            title="Delete Entry"
+                            className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl transition cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
