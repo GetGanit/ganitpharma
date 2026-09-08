@@ -40,7 +40,7 @@ export default function SuperAdminPage() {
 
     if (!error && orgs) {
       setOrganizations(orgs);
-      const tenantCount = orgs.length;
+      const tenantCount = orgs.filter(o => o.is_active === true).length;
       const revenue = tenantCount * 49999;
       setStats({
         totalTenants: tenantCount,
@@ -97,7 +97,7 @@ export default function SuperAdminPage() {
   };
 
   const toggleTenantStatus = async (orgId: string, currentStatus: boolean) => {
-    const newStatus = currentStatus === false ? true : false;
+    const newStatus = !currentStatus;
     const { error } = await supabase
       .from('organizations')
       .update({ is_active: newStatus })
@@ -261,7 +261,7 @@ export default function SuperAdminPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {organizations.map((org) => {
-                  const isActive = org.is_active !== false;
+                  const isActive = org.is_active === true;
 
                   return (
                     <tr key={org.id} className="hover:bg-slate-50/50">
@@ -282,10 +282,10 @@ export default function SuperAdminPage() {
                           className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition shadow-sm flex items-center gap-1 ml-auto cursor-pointer ${
                             isActive 
                               ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
-                              : 'bg-red-100 text-red-700 hover:bg-red-200'
+                              : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                           }`}
                         >
-                          <Power className="w-3 h-3" /> {isActive ? 'Active (Revoke Access)' : 'Suspended (Provide Access)'}
+                          <Power className="w-3 h-3" /> {isActive ? 'Active (Revoke)' : 'Pending Approval (Activate)'}
                         </button>
                       </td>
                     </tr>
