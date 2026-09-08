@@ -1,109 +1,66 @@
-'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/utils/supabase/server';
+import { redirect } from 'next/navigation';
 import { CheckCircle2, LogOut } from 'lucide-react';
+import { revalidatePath } from 'next/cache';
 
-export default function SettingsPage() {
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState({
-    tradingName: '',
-    legalName: '',
-    gstin: '',
-    drugLicence: '',
-    phone: '',
-    email: '',
-    address: '',
-    invoicePrefix: 'INV',
-    lowStockThreshold: 10,
-    expiryAlertDays: 90,
-    receiptFormat: 'a5',
-  });
-
-  const router = useRouter();
+export default async function SettingsPage() {
   const supabase = createClient();
 
-  useEffect(() => {
-    async function fetchOrg() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    redirect('/login');
+  }
 
-      // Strictly fetch mapping from profiles table using the unique authenticated user ID
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('id', user.id)
-        .single();
+  // Fetch the specific organization linked to this exact authenticated user ID
+  const { data: profileData } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', user.id)
+    .single();
 
-      if (profileData?.organization_id) {
-        const { data } = await supabase
-          .from('organizations')
-          .select('*')
-          .eq('id', profileData.organization_id)
-          .single();
+  let organization = null;
+  if (profileData?.organization_id) {
+    const { data } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', profileData.organization_id)
+      .single();
+    organization = data;
+  }
 
-        if (data) {
-          setProfile(prev => ({
-            ...prev,
-            tradingName: data.name || '',
-            legalName: data.owner_name || '',
-            gstin: data.gstin || '',
-            phone: data.phone || '',
-            email: data.email || user.email || '',
-            address: data.address || '',
-          }));
-        }
-      }
-      setLoading(false);
-    }
-    fetchOrg();
-  }, [router, supabase]);
+  async function handleSignOut() {
+    'use server';
+    const sb = createClient();
+    await sb.auth.signOut();
+    redirect('/login');
+  }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const { data: { user } } = await supabase.auth.getUser();
+  async function handleSave(formData: FormData) {
+    'use server';
+    const sb = createClient();
+    const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
 
-    const { data: profileData } = await supabase
+    const { data: pData } = await sb
       .from('profiles')
       .select('organization_id')
       .eq('id', user.id)
       .single();
 
-    if (!profileData?.organization_id) return;
+    if (!pData?.organization_id) return;
 
-    const { error } = await supabase
+    await sb
       .from('organizations')
       .update({
-        name: profile.tradingName,
-        owner_name: profile.legalName,
-        gstin: profile.gstin,
-        phone: profile.phone,
-        address: profile.address,
+        name: formData.get('tradingName'),
+        owner_name: formData.get('legalName'),
+        gstin: formData.get('gstin'),
+        phone: formData.get('phone'),
+        address: formData.get('address'),
       })
-      .eq('id', profileData.organization_id);
+      .eq('id', pData.organization_id);
 
-    if (!error) {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-slate-600 text-sm font-bold animate-pulse">Loading isolated tenant workspace...</div>
-      </div>
-    );
+    revalidatePath('/dashboard/settings');
   }
 
   return (
@@ -113,20 +70,15 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-extrabold text-slate-950">Settings</h1>
           <p className="text-sm text-slate-500">Details here print on every GST invoice you issue.</p>
         </div>
-        <button
-          onClick={handleSignOut}
-          className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl text-xs transition cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" /> Sign Out
-        </button>
+        <form action={handleSignOut}>
+          <button
+            type="submit"
+            className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl text-xs transition cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" /> Sign Out
+          </button>
+        </form>
       </div>
-
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span className="font-bold">Settings saved successfully!</span>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pharmacy Profile */}
@@ -136,14 +88,14 @@ export default function SettingsPage() {
             <p className="text-xs text-slate-400">Appears on invoice headers.</p>
           </div>
 
-          <form onSubmit={handleSave} className="space-y-3 text-xs">
+          <form action={handleSave} className="space-y-3 text-xs">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-medium text-slate-600 mb-1">Trading name</label>
                 <input
                   type="text"
-                  value={profile.tradingName}
-                  onChange={(e) => setProfile({ ...profile, tradingName: e.target.value })}
+                  name="tradingName"
+                  defaultValue={organization?.name || ''}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
@@ -151,8 +103,8 @@ export default function SettingsPage() {
                 <label className="block font-medium text-slate-600 mb-1">Legal name</label>
                 <input
                   type="text"
-                  value={profile.legalName}
-                  onChange={(e) => setProfile({ ...profile, legalName: e.target.value })}
+                  name="legalName"
+                  defaultValue={organization?.owner_name || ''}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
@@ -163,8 +115,8 @@ export default function SettingsPage() {
                 <label className="block font-medium text-slate-600 mb-1">GSTIN</label>
                 <input
                   type="text"
-                  value={profile.gstin}
-                  onChange={(e) => setProfile({ ...profile, gstin: e.target.value })}
+                  name="gstin"
+                  defaultValue={organization?.gstin || ''}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
@@ -172,8 +124,7 @@ export default function SettingsPage() {
                 <label className="block font-medium text-slate-600 mb-1">Drug licence no.</label>
                 <input
                   type="text"
-                  value={profile.drugLicence}
-                  onChange={(e) => setProfile({ ...profile, drugLicence: e.target.value })}
+                  defaultValue="MH-MUM-20B-4412"
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
@@ -184,8 +135,8 @@ export default function SettingsPage() {
                 <label className="block font-medium text-slate-600 mb-1">Phone</label>
                 <input
                   type="text"
-                  value={profile.phone}
-                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  name="phone"
+                  defaultValue={organization?.phone || ''}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
                 />
               </div>
@@ -194,7 +145,7 @@ export default function SettingsPage() {
                 <input
                   type="email"
                   disabled
-                  value={profile.email}
+                  defaultValue={organization?.email || user.email || ''}
                   className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl font-medium text-slate-500 cursor-not-allowed"
                 />
               </div>
@@ -204,8 +155,8 @@ export default function SettingsPage() {
               <label className="block font-medium text-slate-600 mb-1">Address</label>
               <input
                 type="text"
-                value={profile.address}
-                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                name="address"
+                defaultValue={organization?.address || ''}
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
               />
             </div>
@@ -228,24 +179,24 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-600 mb-1">Invoice prefix</label>
-                  <input type="text" value={profile.invoicePrefix} onChange={(e) => setProfile({ ...profile, invoicePrefix: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                  <input type="text" defaultValue="INV" className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
                 <div>
                   <label className="block font-medium text-slate-600 mb-1">Low stock threshold</label>
-                  <input type="number" value={profile.lowStockThreshold} onChange={(e) => setProfile({ ...profile, lowStockThreshold: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                  <input type="number" defaultValue={10} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-600 mb-1">Expiry alert (days)</label>
-                  <input type="number" value={profile.expiryAlertDays} onChange={(e) => setProfile({ ...profile, expiryAlertDays: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                  <input type="number" defaultValue={90} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
                 <div>
                   <label className="block font-medium text-slate-600 mb-1">Receipt format (a5/thermal)</label>
-                  <input type="text" value={profile.receiptFormat} onChange={(e) => setProfile({ ...profile, receiptFormat: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
+                  <input type="text" defaultValue="a5" className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
               </div>
-              <button onClick={() => setSuccess(true)} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition cursor-pointer">
+              <button type="button" className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition cursor-pointer">
                 Save preferences
               </button>
             </div>
@@ -258,7 +209,7 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl flex justify-between items-center border border-slate-100">
-                <span className="font-mono text-slate-700">{profile.email || 'Admin Owner'}</span>
+                <span className="font-mono text-slate-700">{user.email}</span>
                 <span className="bg-slate-200 text-slate-800 px-2.5 py-1 rounded-full font-bold">Owner</span>
               </div>
             </div>
