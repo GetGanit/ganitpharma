@@ -28,7 +28,6 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Create organization securely via database RPC function to bypass RLS safely
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -44,7 +43,6 @@ export default function OnboardingPage() {
       return;
     }
 
-    // 2. Sign up user in Supabase Auth and inject organization_id into metadata
     const { error: authError } = await supabase.auth.signUp({
       email: formData.email,
       password: formData.password,
@@ -62,7 +60,7 @@ export default function OnboardingPage() {
     }
 
     setLoading(false);
-    router.push('/dashboard');
+    router.push('/pending-activation');
   };
 
   return (
@@ -217,9 +215,9 @@ export default function OnboardingPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow text-base font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition"
+                className="w-full flex justify-center items-center gap-2 py-3.5 px-4 rounded-xl shadow text-base font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition cursor-pointer"
               >
-                {loading ? 'Activating Account...' : 'Complete Purchase & Launch Workspace'} <ArrowRight className="w-5 h-5" />
+                {loading ? 'Submitting Registration...' : 'Complete Purchase & Launch Workspace'} <ArrowRight className="w-5 h-5" />
               </button>
             </div>
           </form>
