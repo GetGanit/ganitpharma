@@ -13,7 +13,6 @@ export default function LoginPage() {
 
   // Password Reset Mode State
   const [isResetMode, setIsResetMode] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
 
   // Rate Limiting Security States
   const [failedAttempts, setFailedAttempts] = useState(0);
@@ -65,30 +64,22 @@ export default function LoginPage() {
     setSuccessMsg(null);
     setLoading(true);
 
-    if (!email || !newPassword) {
-      setError('Please provide both your email and new password.');
+    if (!email) {
+      setError('Please provide your registered email address.');
       setLoading(false);
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
-      setLoading(false);
-      return;
-    }
-
-    // Direct password update via Supabase Admin API / RPC or session update
-    const { error: resetError } = await supabase.auth.updateUser({
-      password: newPassword
+    // Secure cryptographic recovery link dispatch via Supabase webhook
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/update-password`,
     });
 
     if (resetError) {
-      setError(`Password reset failed: ${resetError.message}. Ensure you are logged in or check your credentials.`);
+      setError(`Password reset failed: ${resetError.message}.`);
       setLoading(false);
     } else {
-      setSuccessMsg('Password successfully updated! You can now sign in.');
-      setIsResetMode(false);
-      setPassword(newPassword);
+      setSuccessMsg('Recovery email sent! Check your inbox for the secure password reset link.');
       setLoading(false);
     }
   };
@@ -100,7 +91,7 @@ export default function LoginPage() {
           Ganit<span className="text-amber-400">Pharma</span> Portal
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          {isResetMode ? 'Reset your pharmacy portal password' : 'Sign in to access your pharmacy operations & POS'}
+          {isResetMode ? 'Secure password recovery' : 'Sign in to access your pharmacy operations & POS'}
         </p>
       </div>
 
@@ -196,23 +187,9 @@ export default function LoginPage() {
                     placeholder="pharmacist@yourpharmacy.in"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700">New Password</label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="password"
-                    required
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
-                    placeholder="Enter new password (min 6 chars)"
-                  />
-                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  A secure cryptographic reset link will be dispatched to this email.
+                </p>
               </div>
 
               <div className="flex gap-3">
@@ -232,7 +209,7 @@ export default function LoginPage() {
                   disabled={loading}
                   className="w-1/2 flex justify-center items-center gap-1 py-3 px-4 border border-transparent rounded-xl shadow-sm text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition disabled:opacity-50"
                 >
-                  {loading ? 'Updating...' : 'Update Password'}
+                  {loading ? 'Sending...' : 'Send Reset Link'}
                 </button>
               </div>
             </form>
