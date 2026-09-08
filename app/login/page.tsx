@@ -52,20 +52,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Direct check on organizations table using email
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('is_active')
-        .eq('email', authData.user.email)
-        .single();
-
-      if (org && org.is_active === false) {
-        await supabase.auth.signOut();
-        setError('Your workspace is pending admin activation.');
-        setLoading(false);
-        return;
-      }
-
       setFailedAttempts(0);
       router.push('/dashboard');
       router.refresh();
