@@ -26,38 +26,46 @@ export default function SettingsPage() {
 
   useEffect(() => {
     async function fetchOrg() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      // 1. Get the exact active user session for this specific browser context
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.user) {
         router.push('/login');
         return;
       }
 
-      // Strictly fetch mapping from profiles table using the unique authenticated user ID
-      const { data: profileData } = await supabase
+      const user = session.user;
+
+      // 2. Fetch profile mapped strictly to this user's auth ID
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('organization_id')
         .eq('id', user.id)
         .single();
 
-      if (profileData?.organization_id) {
-        const { data } = await supabase
-          .from('organizations')
-          .select('*')
-          .eq('id', profileData.organization_id)
-          .single();
-
-        if (data) {
-          setProfile(prev => ({
-            ...prev,
-            tradingName: data.name || '',
-            legalName: data.owner_name || '',
-            gstin: data.gstin || '',
-            phone: data.phone || '',
-            email: data.email || user.email || '',
-            address: data.address || '',
-          }));
-        }
+      if (profileError || !profileData?.organization_id) {
+        setLoading(false);
+        return;
       }
+
+      // 3. Fetch ONLY the organization belonging to this user's mapped ID
+      const { data: orgData, error: orgError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', profileData.organization_id)
+        .single();
+
+      if (orgData && !orgError) {
+        setProfile(prev => ({
+          ...prev,
+          tradingName: orgData.name || '',
+          legalName: orgData.owner_name || '',
+          gstin: orgData.gstin || '',
+          phone: orgData.phone || '',
+          email: orgData.email || user.email || '',
+          address: orgData.address || '',
+        }));
+      }
+
       setLoading(false);
     }
     fetchOrg();
@@ -76,7 +84,7 @@ export default function SettingsPage() {
 
     if (!profileData?.organization_id) return;
 
-    const { error } = await supabase
+    await supabase
       .from('organizations')
       .update({
         name: profile.tradingName,
@@ -87,23 +95,19 @@ export default function SettingsPage() {
       })
       .eq('id', profileData.organization_id);
 
-    if (!error) {
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    }
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    localStorage.clear();
+    sessionStorage.clear();
     router.push('/login');
   };
 
   if (loading) {
-    return (
-      <div className="p-8 text-center text-slate-500 text-xs font-bold">
-        Loading settings...
-      </div>
-    );
+    return <div className="p-8 text-center text-slate-500 text-xs font-bold">Loading isolated workspace...</div>;
   }
 
   return (
@@ -129,7 +133,6 @@ export default function SettingsPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pharmacy Profile */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div>
             <h3 className="font-bold text-slate-950 text-sm">Pharmacy profile</h3>
@@ -216,14 +219,12 @@ export default function SettingsPage() {
           </form>
         </div>
 
-        {/* Billing Preferences & Team */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <div>
               <h3 className="font-bold text-slate-950 text-sm">Billing preferences</h3>
               <p className="text-xs text-slate-400">Invoice numbers run in sequence per pharmacy.</p>
             </div>
-
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -233,16 +234,6 @@ export default function SettingsPage() {
                 <div>
                   <label className="block font-medium text-slate-600 mb-1">Low stock threshold</label>
                   <input type="number" value={profile.lowStockThreshold} onChange={(e) => setProfile({ ...profile, lowStockThreshold: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Expiry alert (days)</label>
-                  <input type="number" value={profile.expiryAlertDays} onChange={(e) => setProfile({ ...profile, expiryAlertDays: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-600 mb-1">Receipt format (a5/thermal)</label>
-                  <input type="text" value={profile.receiptFormat} onChange={(e) => setProfile({ ...profile, receiptFormat: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
               </div>
               <button onClick={() => setSuccess(true)} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition cursor-pointer">
