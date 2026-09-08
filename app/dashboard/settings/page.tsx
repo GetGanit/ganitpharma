@@ -32,17 +32,15 @@ export default function SettingsPage() {
         return;
       }
 
-      // Fetch the specific organization linked via profiles table to avoid cross-tenant shared browser leaks
+      // Strictly fetch the profile mapped to this specific user ID
       const { data: profileData } = await supabase
         .from('profiles')
         .select('organization_id')
         .eq('id', user.id)
         .single();
 
-      const orgId = profileData?.organization_id || user.user_metadata?.organization_id;
-
-      if (orgId) {
-        const { data } = await supabase.from('organizations').select('*').eq('id', orgId).single();
+      if (profileData?.organization_id) {
+        const { data } = await supabase.from('organizations').select('*').eq('id', profileData.organization_id).single();
         if (data) {
           setProfile(prev => ({
             ...prev,
@@ -84,7 +82,7 @@ export default function SettingsPage() {
       .eq('id', user.id)
       .single();
 
-    const orgId = profileData?.organization_id || user.user_metadata?.organization_id;
+    const orgId = profileData?.organization_id;
     if (!orgId) return;
 
     const { error } = await supabase
