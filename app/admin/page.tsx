@@ -111,14 +111,13 @@ export default function SuperAdminPage() {
   };
 
   const deleteOrganization = async (orgId: string, orgName: string) => {
-    if (!confirm(`Are you sure you want to delete ${orgName}? This action cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to delete ${orgName}? This will clear their record and login credentials.`)) {
       return;
     }
 
-    const { error } = await supabase
-      .from('organizations')
-      .delete()
-      .eq('id', orgId);
+    const { error } = await supabase.rpc('delete_organization_completely', {
+      p_org_id: orgId,
+    });
 
     if (!error) {
       loadAdminData();
