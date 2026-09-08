@@ -2,19 +2,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Password Reset Mode State
   const [isResetMode, setIsResetMode] = useState(false);
-
-  // Rate Limiting Security States
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 
@@ -26,7 +24,6 @@ export default function LoginPage() {
     setError(null);
     setSuccessMsg(null);
 
-    // Rate Limit Check
     if (lockoutUntil && Date.now() < lockoutUntil) {
       const remainingSecs = Math.ceil((lockoutUntil - Date.now()) / 1000);
       setError(`Too many failed attempts. Please wait ${remainingSecs}s before trying again.`);
@@ -35,27 +32,41 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
+    if (authError || !authData.user) {
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
       
-      // Trigger 30s lockout after 5 failed attempts
       if (newAttempts >= 5) {
         setLockoutUntil(Date.now() + 30000);
         setError('Security Lockout: 5 failed login attempts. Locked for 30 seconds.');
       } else {
-        setError(`${error.message} (Attempt ${newAttempts}/5)`);
+        setError(`${authError?.message || 'Login failed'} (Attempt ${newAttempts}/5)`);
       }
       setLoading(false);
-    } else {
-      setFailedAttempts(0);
-      router.push('/dashboard');
+      return;
     }
+
+    // Check if the user's organization is active
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id, organizations(is_active)')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profile?.organizations?.is_active === false) {
+      await supabase.auth.signOut();
+      setError('Your workspace is pending admin activation.');
+      setLoading(false);
+      return;
+    }
+
+    setFailedAttempts(0);
+    router.push('/dashboard');
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {
@@ -70,7 +81,6 @@ export default function LoginPage() {
       return;
     }
 
-    // Secure cryptographic recovery link dispatch via Supabase webhook
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/update-password`,
     });
@@ -150,13 +160,20 @@ export default function LoginPage() {
                     <Lock className="w-4 h-4" />
                   </div>
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
+                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-sm"
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -164,7 +181,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || (lockoutUntil !== null && Date.now() < lockoutUntil)}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-400 transition disabled:opacity-50"
+                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-400 transition disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? 'Signing in...' : 'Sign In to Dashboard'} <ArrowRight className="w-4 h-4" />
                 </button>
@@ -200,14 +217,14 @@ export default function LoginPage() {
                     setError(null);
                     setSuccessMsg(null);
                   }}
-                  className="w-1/2 py-3 px-4 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                  className="w-1/2 py-3 px-4 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
                 >
                   Back to Sign In
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-1/2 flex justify-center items-center gap-1 py-3 px-4 border border-transparent rounded-xl shadow-sm text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition disabled:opacity-50"
+                  className="w-1/2 flex justify-center items-center gap-1 py-3 px-4 border border-transparent rounded-xl shadow-sm text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-500 transition disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? 'Sending...' : 'Send Reset Link'}
                 </button>
