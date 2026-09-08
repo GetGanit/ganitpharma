@@ -99,7 +99,11 @@ export default function SettingsPage() {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500 text-xs font-bold">Loading settings...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-slate-600 text-sm font-bold animate-pulse">Loading isolated tenant workspace...</div>
+      </div>
+    );
   }
 
   return (
