@@ -2,18 +2,19 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, LogOut } from 'lucide-react';
 
 export default function SettingsPage() {
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState({
-    tradingName: 'Ganit Pharmacy',
-    legalName: 'Ganit Retail Pharma Pvt Ltd',
-    gstin: '29ABCDE1234F1Z5',
-    drugLicence: 'MH-MUM-20B-4412',
-    phone: '+91 98450 11223',
-    email: 'owner@ganitdemo.in',
-    address: '12 MG Road, Bengaluru 560001',
+    tradingName: '',
+    legalName: '',
+    gstin: '',
+    drugLicence: '',
+    phone: '',
+    email: '',
+    address: '',
     invoicePrefix: 'INV',
     lowStockThreshold: 10,
     expiryAlertDays: 90,
@@ -30,36 +31,101 @@ export default function SettingsPage() {
         router.push('/login');
         return;
       }
-      const orgId = user.user_metadata?.organization_id;
+
+      // Fetch the specific organization linked via profiles table to avoid cross-tenant shared browser leaks
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      const orgId = profileData?.organization_id || user.user_metadata?.organization_id;
+
       if (orgId) {
         const { data } = await supabase.from('organizations').select('*').eq('id', orgId).single();
         if (data) {
           setProfile(prev => ({
             ...prev,
-            tradingName: data.name || prev.tradingName,
-            legalName: data.owner_name || prev.legalName,
-            gstin: data.gstin || prev.gstin,
-            phone: data.phone || prev.phone,
-            email: data.email || prev.email,
-            address: data.address || prev.address,
+            tradingName: data.name || '',
+            legalName: data.owner_name || '',
+            gstin: data.gstin || '',
+            phone: data.phone || '',
+            email: data.email || user.email || '',
+            address: data.address || '',
+          }));
+        }
+      } else if (user.email) {
+        const { data } = await supabase.from('organizations').select('*').eq('email', user.email).single();
+        if (data) {
+          setProfile(prev => ({
+            ...prev,
+            tradingName: data.name || '',
+            legalName: data.owner_name || '',
+            gstin: data.gstin || '',
+            phone: data.phone || '',
+            email: data.email || '',
+            address: data.address || '',
           }));
         }
       }
+      setLoading(false);
     }
     fetchOrg();
   }, [router, supabase]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
+
+    const orgId = profileData?.organization_id || user.user_metadata?.organization_id;
+    if (!orgId) return;
+
+    const { error } = await supabase
+      .from('organizations')
+      .update({
+        name: profile.tradingName,
+        owner_name: profile.legalName,
+        gstin: profile.gstin,
+        phone: profile.phone,
+        address: profile.address,
+      })
+      .eq('id', orgId);
+
+    if (!error) {
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
   };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center text-slate-500 text-xs font-bold">Loading settings...</div>;
+  }
 
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold text-slate-950">Settings</h1>
-        <p className="text-sm text-slate-500">Details here print on every GST invoice you issue.</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-950">Settings</h1>
+          <p className="text-sm text-slate-500">Details here print on every GST invoice you issue.</p>
+        </div>
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl text-xs transition cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" /> Sign Out
+        </button>
       </div>
 
       {success && (
@@ -134,9 +200,9 @@ export default function SettingsPage() {
                 <label className="block font-medium text-slate-600 mb-1">Email</label>
                 <input
                   type="email"
+                  disabled
                   value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium"
+                  className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl font-medium text-slate-500 cursor-not-allowed"
                 />
               </div>
             </div>
@@ -151,7 +217,7 @@ export default function SettingsPage() {
               />
             </div>
 
-            <button type="submit" className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition">
+            <button type="submit" className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition cursor-pointer">
               Save profile
             </button>
           </form>
@@ -186,7 +252,7 @@ export default function SettingsPage() {
                   <input type="text" value={profile.receiptFormat} onChange={(e) => setProfile({ ...profile, receiptFormat: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-xl font-medium" />
                 </div>
               </div>
-              <button onClick={() => setSuccess(true)} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition">
+              <button onClick={() => setSuccess(true)} className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow transition cursor-pointer">
                 Save preferences
               </button>
             </div>
@@ -199,7 +265,7 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2 text-xs">
               <div className="p-3 bg-slate-50 rounded-xl flex justify-between items-center border border-slate-100">
-                <span className="font-mono text-slate-700">Admin Owner</span>
+                <span className="font-mono text-slate-700">{profile.email || 'Admin Owner'}</span>
                 <span className="bg-slate-200 text-slate-800 px-2.5 py-1 rounded-full font-bold">Owner</span>
               </div>
             </div>
