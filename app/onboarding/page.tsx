@@ -28,6 +28,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
+    // 1. Create organization record with is_active = false via RPC without triggering client auth signup
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -39,22 +40,6 @@ export default function OnboardingPage() {
 
     if (orgError || !orgId) {
       setError(orgError?.message || 'Failed to create organization.');
-      setLoading(false);
-      return;
-    }
-
-    const { error: authError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: {
-          organization_id: orgId,
-        },
-      },
-    });
-
-    if (authError) {
-      setError(authError.message);
       setLoading(false);
       return;
     }
