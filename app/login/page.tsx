@@ -32,45 +32,47 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    // Clear any lingering session cache to ensure clean tenant context isolation
-    await supabase.auth.signOut();
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError || !authData.user) {
-      const newAttempts = failedAttempts + 1;
-      setFailedAttempts(newAttempts);
-      
-      if (newAttempts >= 5) {
-        setLockoutUntil(Date.now() + 30000);
-        setError('Security Lockout: 5 failed login attempts. Locked for 30 seconds.');
-      } else {
-        setError(`${authError?.message || 'Login failed'} (Attempt ${newAttempts}/5)`);
+      if (authError || !authData.user) {
+        const newAttempts = failedAttempts + 1;
+        setFailedAttempts(newAttempts);
+        
+        if (newAttempts >= 5) {
+          setLockoutUntil(Date.now() + 30000);
+          setError('Security Lockout: 5 failed login attempts. Locked for 30 seconds.');
+        } else {
+          setError(`${authError?.message || 'Login failed'} (Attempt ${newAttempts}/5)`);
+        }
+        setLoading(false);
+        return;
       }
+
+      // Direct check on organizations table using email
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('is_active')
+        .eq('email', authData.user.email)
+        .single();
+
+      if (org && org.is_active === false) {
+        await supabase.auth.signOut();
+        setError('Your workspace is pending admin activation.');
+        setLoading(false);
+        return;
+      }
+
+      setFailedAttempts(0);
+      router.push('/dashboard');
+      router.refresh();
+    } catch (err: any) {
+      setError(err?.message || 'An unexpected error occurred during sign in.');
       setLoading(false);
-      return;
     }
-
-    // Direct check on organizations table using email
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('is_active')
-      .eq('email', authData.user.email)
-      .single();
-
-    // If organization is found and not active, block access
-    if (org && org.is_active === false) {
-      await supabase.auth.signOut();
-      setError('Your workspace is pending admin activation.');
-      setLoading(false);
-      return;
-    }
-
-    setFailedAttempts(0);
-    router.push('/dashboard');
   };
 
   const handlePasswordReset = async (e: React.FormEvent) => {
