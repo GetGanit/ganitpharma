@@ -28,7 +28,7 @@ export default function OnboardingPage() {
     setLoading(true);
     setError(null);
 
-    // 1. Create organization record as pending and pass the chosen password
+    // 1. Create organization record as pending
     const { data: orgId, error: orgError } = await supabase.rpc('register_new_pharmacy', {
       p_pharmacy_name: formData.pharmacyName,
       p_owner_name: formData.ownerName,
@@ -36,7 +36,6 @@ export default function OnboardingPage() {
       p_phone: formData.phone,
       p_gstin: formData.gstin,
       p_email: formData.email,
-      p_password: formData.password,
     });
 
     if (orgError || !orgId) {
@@ -44,6 +43,34 @@ export default function OnboardingPage() {
       setLoading(false);
       return;
     }
+
+    // 2. Standard Supabase auth signup using their chosen password
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password,
+      options: {
+        data: {
+          organization_id: orgId,
+        },
+      },
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    // 3. Link user ID to profiles table
+    if (authData.user) {
+      await supabase.from('profiles').insert({
+        id: authData.user.id,
+        organization_id: orgId,
+      });
+    }
+
+    // 4. Sign out immediately so they cannot enter the dashboard yet
+    await supabase.auth.signOut();
 
     setLoading(false);
     router.push('/pending-activation');
