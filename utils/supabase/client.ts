@@ -6,7 +6,7 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookieOptions: {
-        name: 'ganit-auth-token',
+        name: 'ganit-pharma-auth',
       },
     }
   );
