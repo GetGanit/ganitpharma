@@ -23,7 +23,6 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     async function checkAuth() {
-      // Check if already unlocked in session storage for the owner admin
       if (sessionStorage.getItem('ganit_admin_unlocked') === 'true') {
         setUnlocked(true);
         loadAdminData();
@@ -81,6 +80,7 @@ export default function SuperAdminPage() {
   const handleForgotPassword = async () => {
     setError(null);
     setSuccessMsg(null);
+    
     const { error: resetError } = await supabase.auth.resetPasswordForEmail('durgabm2001@gmail.com', {
       redirectTo: `${window.location.origin}/auth/update-password`,
     });
@@ -107,10 +107,10 @@ export default function SuperAdminPage() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-400 text-sm font-medium">Verifying owner credentials...</div>;
+    return <div className="min-h-screen bg-[#0f172a] flex items-center justify-center text-slate-400 text-sm font-medium">Verifying owner credentials...</div>;
   }
 
-  // Standalone SellerMastery Style Restricted Login Screen
+  // Standalone SellerMastery Style Restricted Login Screen (Completely isolated from tenant flows)
   if (!unlocked) {
     return (
       <div className="min-h-screen bg-[#0f172a] text-slate-100 flex items-center justify-center p-4">
@@ -147,7 +147,7 @@ export default function SuperAdminPage() {
                 <button
                   type="button"
                   onClick={handleForgotPassword}
-                  className="text-[11px] font-bold text-blue-600 hover:underline bg-transparent border-none cursor-pointer"
+                  className="text-[11px] font-bold text-blue-600 hover:underline bg-transparent border-none cursor-pointer p-0"
                 >
                   Forgot Password?
                 </button>
@@ -171,10 +171,6 @@ export default function SuperAdminPage() {
             >
               Access Admin Dashboard 🔑
             </button>
-
-            <div className="text-center pt-2">
-              <a href="/login" className="text-slate-400 hover:text-slate-600 font-bold text-[11px]">← Return to Tenant Login</a>
-            </div>
           </form>
         </div>
       </div>
