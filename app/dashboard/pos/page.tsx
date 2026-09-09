@@ -1765,7 +1765,7 @@ export default function POSPage() {
                 )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
-                  <span>₹{Number(selectedInvoice.gst_total).dates ? '' : Number(selectedInvoice.gst_total).toFixed(2)}</span>
+                  <span>₹{Number(selectedInvoice.gst_total || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm font-black text-slate-950 pt-1.5 border-t border-slate-100">
                   <span>Net Payable Amount:</span>
