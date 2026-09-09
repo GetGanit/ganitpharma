@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft, Trash2, Building2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface POItem {
   item_name: string;
@@ -22,7 +23,7 @@ export default function PurchasesPage() {
   
   const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po' | 'new_vendor'>('list');
   
-  // CSV Import State
+  // CSV/Excel Import State
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
@@ -134,11 +135,29 @@ export default function PurchasesPage() {
     setError(null);
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      parseCSV(text);
-    };
-    reader.readAsText(selectedFile);
+    const fileName = selectedFile.name.toLowerCase();
+
+    if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+          setParsedData(jsonRows);
+        } catch (err: any) {
+          setError('Failed to parse Excel file: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(selectedFile);
+    } else {
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        parseCSV(text);
+      };
+      reader.readAsText(selectedFile);
+    }
   };
 
   const parseCSV = (text: string) => {
@@ -276,7 +295,6 @@ export default function PurchasesPage() {
       return;
     }
 
-    // If "Receive into stock now" is checked, insert products and batches immediately
     if (receiveIntoStock) {
       for (const item of poItems) {
         const { data: prodData } = await supabase
@@ -329,8 +347,7 @@ export default function PurchasesPage() {
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-6 bg-hero-gradient min-h-screen">
       
-      {/* Top Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/85 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-950 tracking-tight">Purchases</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">Receiving a purchase order creates the batches automatically, so stock is sellable at once.</p>
@@ -371,7 +388,6 @@ export default function PurchasesPage() {
       {viewMode === 'list' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* Purchase Orders Table */}
           <div className="lg:col-span-2 bg-white/90 backdrop-blur-md rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden p-6 space-y-4">
             <h3 className="font-black text-slate-950 text-sm uppercase tracking-wider">Purchase orders</h3>
             {loading ? (
@@ -408,7 +424,6 @@ export default function PurchasesPage() {
             )}
           </div>
 
-          {/* Vendors Card with Delete Option */}
           <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-slate-200/80 shadow-sm p-6 space-y-4 h-fit">
             <h3 className="font-black text-slate-950 text-sm uppercase tracking-wider">Registered Vendors</h3>
             {vendorsList.length === 0 ? (
@@ -451,14 +466,14 @@ export default function PurchasesPage() {
           </div>
 
           <div>
-            <h3 className="text-base font-bold text-slate-950">Distributor Bill CSV/XLSX Import</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Upload your distributor invoice to map columns, verify schemes (10+1), and review stock inward before updating inventory.</p>
+            <h3 className="text-base font-bold text-slate-950">Distributor Bill CSV / Excel Import</h3>
+            <p className="text-xs text-slate-500 mt-1 font-medium">Upload your distributor invoice in CSV or Excel (.xlsx, .xls) format to map columns and update inventory.</p>
           </div>
 
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv"
+            accept=".csv, .xlsx, .xls"
             onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
             className="hidden"
           />
@@ -469,13 +484,13 @@ export default function PurchasesPage() {
           >
             <Truck className="w-6 h-6 text-slate-400" />
             <p className="text-xs font-bold text-slate-700">
-              {file ? `Selected file: ${file.name}` : 'Click to upload or select distributor bill CSV'}
+              {file ? `Selected file: ${file.name}` : 'Click to upload or select CSV / Excel bill file'}
             </p>
             <button
               type="button"
               className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-white font-bold rounded-xl text-xs shadow transition"
             >
-              Select CSV File
+              Select File (.csv, .xlsx, .xls)
             </button>
           </div>
 
@@ -507,12 +522,12 @@ export default function PurchasesPage() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {parsedData.map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 font-bold text-slate-900">{row.product_name}</td>
-                        <td className="p-3 text-slate-600">{row.brand}</td>
-                        <td className="p-3 font-mono text-slate-600">{row.batch_number}</td>
-                        <td className="p-3 text-slate-600">{row.expiry_date}</td>
-                        <td className="p-3 font-semibold text-slate-900">₹{row.mrp}</td>
-                        <td className="p-3 font-bold text-amber-700">{row.stock_qty}</td>
+                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name']}</td>
+                        <td className="p-3 text-slate-600">{row.brand || row['Brand']}</td>
+                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch']}</td>
+                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry']}</td>
+                        <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
+                        <td className="p-3 font-bold text-amber-700">{row.stock_qty || row['Quantity']}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -552,7 +567,6 @@ export default function PurchasesPage() {
         </div>
       )}
 
-      {/* New Purchase Order Modal Matching Reference Design */}
       {viewMode === 'new_po' && (
         <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-slate-200/80 shadow-2xl space-y-6 max-w-4xl mx-auto">
           <div className="flex justify-between items-center border-b pb-4">
@@ -571,7 +585,6 @@ export default function PurchasesPage() {
               </select>
             </div>
 
-            {/* PO Line Items Grid matching reference */}
             <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/50 space-y-3">
               <div className="grid grid-cols-12 gap-2 text-slate-500 font-bold uppercase text-[10px]">
                 <div className="col-span-3">Item</div>
