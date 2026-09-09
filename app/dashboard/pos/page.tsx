@@ -24,6 +24,15 @@ export default function POSPage() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [cart, setCart] = useState<CartItem[]>([]);
   
+  // Organization Profile State for dynamic branding and store info
+  const [orgProfile, setOrgProfile] = useState<any>({
+    trading_name: 'Ganit Pharma',
+    address: 'Bengaluru, Karnataka',
+    gstin: '29ABCDE1234F1Z5',
+    terminal_id: '001',
+    store_name: 'Main Store'
+  });
+  
   // Inline Quantities and Refs per Search Suggestion Item
   const [suggestionQtys, setSuggestionQtys] = useState<{ [productId: string]: number | string }>({});
   const qtyInputRefs = useRef<{ [productId: string]: HTMLInputElement | null }>({});
@@ -76,7 +85,7 @@ export default function POSPage() {
 
   // Discount Modal
   const [discountModalIndex, setDiscountModalIndex] = useState<number | null>(null);
-  const [itemDiscountInput, setItemDiscountInput] = useState<number>(0);
+  const [itemDiscountInput, setItemDiscountInput] = useState<number | string>('');
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +94,31 @@ export default function POSPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    async function fetchOrgProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const orgId = user.user_metadata?.organization_id;
+      if (orgId) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', orgId)
+          .single();
+        if (orgData) {
+          setOrgProfile({
+            trading_name: orgData.trading_name || orgData.name || 'Ganit Pharma',
+            address: orgData.address || 'Bengaluru, Karnataka',
+            gstin: orgData.gstin || orgData.gst || '29ABCDE1234F1Z5',
+            terminal_id: orgData.terminal_id || '001',
+            store_name: orgData.store_name || orgData.trading_name || 'Main Store'
+          });
+        }
+      }
+    }
+    fetchOrgProfile();
+  }, [supabase]);
 
   // Keyboard Shortcuts (F2, F1, and ESC to close modals)
   useEffect(() => {
@@ -455,7 +489,7 @@ export default function POSPage() {
       updated[discountModalIndex].discount_percent = Number(itemDiscountInput) || 0;
       setCart(updated);
       setDiscountModalIndex(null);
-      setItemDiscountInput(0);
+      setItemDiscountInput('');
     }
   };
 
@@ -540,7 +574,7 @@ export default function POSPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (!orgId) {
-      setError('Tenant organization ID not found.');
+      setError('Pharmacy organization ID not found.');
       setLoading(false);
       return;
     }
@@ -765,12 +799,6 @@ export default function POSPage() {
     window.print();
   };
 
-  const sendWhatsAppInvoice = (inv: any) => {
-    const phone = inv.customers?.phone || '919999999999';
-    const msg = encodeURIComponent(`Hello ${inv.customers?.customer_name || 'Customer'}, here is your tax invoice ${inv.invoice_number} from GanitPharma. Total Amount: ₹${Number(inv.final_amount).toFixed(2)}. Thank you for visiting!`);
-    window.open(`https://wa.me/91${phone}?text=${msg}`, '_blank');
-  };
-
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-hero-gradient">
       
@@ -836,10 +864,10 @@ export default function POSPage() {
 
         <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-2 shadow-sm flex flex-col justify-between">
           <div className="flex justify-between text-slate-500">
-            <span>Terminal ID:</span> <strong className="text-slate-900">001</strong>
+            <span>Terminal ID:</span> <strong className="text-slate-900">{orgProfile.terminal_id}</strong>
           </div>
           <div className="flex justify-between text-slate-500">
-            <span>Store:</span> <strong className="text-slate-900">Bangalore Hub</strong>
+            <span>Store:</span> <strong className="text-slate-900">{orgProfile.store_name}</strong>
           </div>
           <div className="flex justify-between text-slate-500">
             <span>Shortcut:</span> <strong className="text-amber-600">F2 (Search) | F1 (Journals) | ESC (Close)</strong>
@@ -900,7 +928,6 @@ export default function POSPage() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        {/* Qty Field before MRP badge without spin arrows */}
                         <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-sm">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">QTY</span>
                           <input
@@ -1024,7 +1051,7 @@ export default function POSPage() {
                             <button 
                               onClick={() => {
                                 setDiscountModalIndex(idx);
-                                setItemDiscountInput(item.discount_percent);
+                                setItemDiscountInput(item.discount_percent || '');
                               }}
                               className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-bold"
                             >
@@ -1046,7 +1073,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          {/* Bottom Financial Bar with fixed gross subtotal */}
+          {/* Bottom Financial Bar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 grid grid-cols-6 gap-3 text-xs shadow-sm items-center">
             <div>
               <span className="text-slate-400 font-bold block">Subtotal</span>
@@ -1113,7 +1140,7 @@ export default function POSPage() {
               onClick={() => {
                 if (cart.length > 0) {
                   setDiscountModalIndex(0);
-                  setItemDiscountInput(cart[0].discount_percent);
+                  setItemDiscountInput(cart[0].discount_percent || '');
                 } else {
                   setSoftwareAlertMsg('Add an item to the cart first.');
                 }
@@ -1203,7 +1230,7 @@ export default function POSPage() {
 
       </div>
 
-      {/* Inventory Check Modal with Fully Functional Arrow Keys & Double Enter */}
+      {/* Inventory Check Modal */}
       {showInventoryModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1353,7 +1380,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Manual Discount Modal with Exclusion Option */}
+      {/* Manual Discount Modal */}
       {discountModalIndex !== null && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -1364,7 +1391,7 @@ export default function POSPage() {
               min="0"
               max="100"
               value={itemDiscountInput}
-              onChange={(e) => setItemDiscountInput(Number(e.target.value))}
+              onChange={(e) => setItemDiscountInput(e.target.value)}
               className="w-full px-3.5 py-2.5 border border-slate-300 rounded-2xl font-bold text-sm focus:ring-2 focus:ring-amber-400 focus:outline-none"
             />
             <div className="flex justify-end gap-2 pt-2">
@@ -1608,24 +1635,21 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal for Viewing / Printing / Reprinting */}
+      {/* Tax Invoice Modal for Viewing / Printing / Reprinting formatted strictly for 1-page print */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:h-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:text-[11px] print:leading-tight">
             
             <style jsx global>{`
               @media print {
                 @page {
                   size: portrait;
-                  margin: 0mm;
+                  margin: 5mm;
                 }
                 body, html {
-                  height: 100% !important;
-                  max-height: 100vh !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
+                  height: auto !important;
+                  max-height: none !important;
                   background: white !important;
-                  -webkit-print-color-adjust: exact;
                 }
                 body * {
                   visibility: hidden;
@@ -1634,18 +1658,15 @@ export default function POSPage() {
                   visibility: visible;
                 }
                 .fixed.inset-0 {
-                  position: fixed !important;
+                  position: absolute !important;
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: 100% !important;
+                  height: auto !important;
                   background: white !important;
-                  display: flex !important;
-                  align-items: flex-start !important;
-                  justify-content: center !important;
-                  page-break-after: avoid !important;
-                  page-break-inside: avoid !important;
-                  overflow: hidden !important;
+                  display: block !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
                 }
                 .print\\:hidden {
                   display: none !important;
@@ -1653,7 +1674,7 @@ export default function POSPage() {
               }
             `}</style>
 
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4 print:hidden">
+            <div className="flex justify-between items-start border-b border-slate-200 pb-3 print:hidden">
               <div>
                 <h3 className="text-lg font-black text-slate-950">GST Tax Invoice</h3>
                 <span className="text-xs text-slate-500 font-medium">Original for Recipient</span>
@@ -1666,12 +1687,12 @@ export default function POSPage() {
               </div>
             </div>
 
-            <div className="space-y-4 text-xs text-slate-800">
-              <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+            <div className="space-y-3 text-xs text-slate-800 print:space-y-1.5">
+              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
                 <div>
-                  <h1 className="text-xl font-black text-slate-950">Ganit<span className="text-amber-500">Pharma</span></h1>
-                  <p className="text-slate-500 font-medium">12 MG Road, Bengaluru, Karnataka - 560001</p>
-                  <p className="text-slate-500 font-mono mt-1">GSTIN: 29ABCDE1234F1Z5</p>
+                  <h1 className="text-lg font-black text-slate-950">{orgProfile.trading_name}</h1>
+                  <p className="text-slate-500 font-medium">{orgProfile.address}</p>
+                  <p className="text-slate-500 font-mono mt-0.5">GSTIN: {orgProfile.gstin}</p>
                 </div>
                 <div className="text-right">
                   <strong className="text-sm block">{selectedInvoice.invoice_number}</strong>
@@ -1679,7 +1700,7 @@ export default function POSPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 print:bg-white print:border-slate-300 print:p-1.5">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer Details</span>
                   <strong className="text-slate-950">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</strong>
@@ -1687,7 +1708,7 @@ export default function POSPage() {
                 </div>
                 <div className="text-right">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Payment Status</span>
-                  <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg font-black uppercase text-[10px]">
+                  <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-black uppercase text-[10px]">
                     {selectedInvoice.payment_status}
                   </span>
                 </div>
@@ -1695,14 +1716,14 @@ export default function POSPage() {
 
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black">
-                    <th className="p-2.5">Item Description</th>
-                    <th className="p-2.5">Batch</th>
-                    <th className="p-2.5">Qty</th>
-                    <th className="p-2.5">Unit Price</th>
-                    <th className="p-2.5">Discount</th>
-                    <th className="p-2.5">GST %</th>
-                    <th className="p-2.5 text-right">Total (₹)</th>
+                  <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black print:bg-slate-200">
+                    <th className="p-2">Item Description</th>
+                    <th className="p-2">Batch</th>
+                    <th className="p-2">Qty</th>
+                    <th className="p-2">Unit Price</th>
+                    <th className="p-2">Discount</th>
+                    <th className="p-2">GST %</th>
+                    <th className="p-2 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1716,22 +1737,22 @@ export default function POSPage() {
 
                     return (
                       <tr key={idx}>
-                        <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                        <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                        <td className="p-2.5">{qty}</td>
-                        <td className="p-2.5 font-mono">₹{unitPrice.toFixed(2)}</td>
-                        <td className="p-2.5 font-mono text-red-600 font-bold">
+                        <td className="p-2 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
+                        <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                        <td className="p-2">{qty}</td>
+                        <td className="p-2 font-mono">₹{unitPrice.toFixed(2)}</td>
+                        <td className="p-2 font-mono text-red-600 font-bold">
                           {itemDiscVal > 0 ? `-₹${itemDiscVal.toFixed(2)} (${itemDiscPct}%)` : '—'}
                         </td>
-                        <td className="p-2.5">{item.gst_percent}%</td>
-                        <td className="p-2.5 text-right font-black">₹{netItemTotal.toFixed(2)}</td>
+                        <td className="p-2">{item.gst_percent}%</td>
+                        <td className="p-2 text-right font-black">₹{netItemTotal.toFixed(2)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
 
-              <div className="border-t border-slate-200 pt-3 space-y-1 text-right font-semibold">
+              <div className="border-t border-slate-200 pt-2 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
                   <span>Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
@@ -1744,9 +1765,9 @@ export default function POSPage() {
                 )}
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
-                  <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
+                  <span>₹{Number(selectedInvoice.gst_total).dates ? '' : Number(selectedInvoice.gst_total).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t border-slate-100">
+                <div className="flex justify-between text-sm font-black text-slate-950 pt-1.5 border-t border-slate-100">
                   <span>Net Payable Amount:</span>
                   <span className="text-amber-600">₹{Number(selectedInvoice.final_amount).toFixed(2)}</span>
                 </div>
