@@ -1644,29 +1644,34 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 5mm;
+                  margin: 0mm;
                 }
                 body, html {
-                  height: auto !important;
-                  max-height: none !important;
+                  height: 100% !important;
+                  max-height: 100vh !important;
+                  overflow: hidden !important;
                   background: white !important;
                 }
                 body * {
-                  visibility: hidden;
+                  visibility: hidden !important;
                 }
                 .fixed.inset-0, .fixed.inset-0 * {
-                  visibility: visible;
+                  visibility: visible !important;
                 }
                 .fixed.inset-0 {
-                  position: absolute !important;
+                  position: fixed !important;
                   left: 0 !important;
                   top: 0 !important;
-                  width: 100% !important;
-                  height: auto !important;
+                  width: 100vw !important;
+                  height: 100vh !important;
                   background: white !important;
-                  display: block !important;
-                  padding: 0 !important;
+                  display: flex !important;
+                  align-items: flex-start !important;
+                  justify-content: center !important;
+                  padding: 5mm !important;
                   margin: 0 !important;
+                  page-break-after: avoid !important;
+                  page-break-inside: avoid !important;
                 }
                 .print\\:hidden {
                   display: none !important;
