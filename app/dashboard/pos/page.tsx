@@ -1663,10 +1663,12 @@ export default function POSPage() {
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: auto !important;
+                  height: 100vh !important;
                   background: white !important;
-                  display: block !important;
-                  padding: 4mm !important;
+                  display: flex !important;
+                  align-items: center !important;
+                  justify-content: center !important;
+                  padding: 5mm !important;
                   margin: 0 !important;
                   page-break-after: avoid !important;
                   page-break-inside: avoid !important;
