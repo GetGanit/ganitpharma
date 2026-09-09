@@ -214,7 +214,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="p-8 max-w-7xl w-full mx-auto space-y-6 bg-hero-gradient min-h-screen">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/80 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4 print:hidden">
         <div>
           <h1 className="text-2xl font-black text-slate-950 tracking-tight">GST Tax Invoices</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">Search, view, print, and share GST tax invoices with customers.</p>
@@ -252,7 +252,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden print:hidden">
         <div className="p-4 border-b border-slate-200 font-black text-slate-950 text-xs uppercase tracking-wider">
           Generated Invoices ({invoices.length})
         </div>
@@ -377,8 +377,8 @@ export default function InvoicesPage() {
 
       {/* Tax Invoice Modal formatted strictly with Discount & Total columns */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:m-0 print:p-4 print:text-[11px] print:leading-tight">
+        <div className="invoice-print-modal fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
+          <div className="invoice-print-content bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:m-0 print:p-4 print:text-[11px] print:leading-tight">
             
             <div className="flex justify-between items-start border-b border-slate-200 pb-3 print:hidden">
               <div>
@@ -482,6 +482,66 @@ export default function InvoicesPage() {
           </div>
         </div>
       )}
+      <style jsx global>{`
+        @media print {
+          @page {
+            margin: 0;
+          }
+
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+
+          body {
+            overflow: hidden !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          .invoice-print-modal,
+          .invoice-print-modal * {
+            visibility: visible !important;
+          }
+
+          .invoice-print-modal {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            background: white !important;
+            overflow: visible !important;
+            page-break-after: avoid !important;
+            break-after: avoid-page !important;
+          }
+
+          .invoice-print-content {
+            width: 100% !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 8mm !important;
+            box-sizing: border-box !important;
+            background: white !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            page-break-after: avoid !important;
+            break-after: avoid-page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid-page !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
