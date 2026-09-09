@@ -1644,7 +1644,7 @@ export default function POSPage() {
               @media print {
                 @page {
                   size: portrait;
-                  margin: 0mm;
+                  margin: 0;
                 }
                 body, html {
                   height: 100% !important;
@@ -1663,12 +1663,10 @@ export default function POSPage() {
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: 100vh !important;
+                  height: 100% !important;
                   background: white !important;
-                  display: flex !important;
-                  align-items: center !important;
-                  justify-content: center !important;
-                  padding: 5mm !important;
+                  display: block !important;
+                  padding: 8mm !important;
                   margin: 0 !important;
                   page-break-after: avoid !important;
                   page-break-inside: avoid !important;
