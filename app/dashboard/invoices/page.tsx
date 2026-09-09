@@ -11,6 +11,9 @@ export default function InvoicesPage() {
   const [invoiceNoQuery, setInvoiceNoQuery] = useState('');
   const [dateQuery, setDateQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+
+  // Printer format selected in Settings for this pharmacy/workstation
+  const [printerFormat, setPrinterFormat] = useState<'a4' | 'thermal80' | 'thermal58'>('a4');
   const [orgProfile, setOrgProfile] = useState<any>({
     trading_name: 'Ganit Pharma',
     address: 'Bengaluru, Karnataka',
@@ -40,6 +43,15 @@ export default function InvoicesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
+      try {
+        const savedPrinterFormat = localStorage.getItem(`ganit_pharma_printer_format_${orgId}`);
+        if (savedPrinterFormat === 'a4' || savedPrinterFormat === 'thermal80' || savedPrinterFormat === 'thermal58') {
+          setPrinterFormat(savedPrinterFormat);
+        }
+      } catch (error) {
+        console.error('Unable to load printer format:', error);
+      }
+
       const { data: orgData } = await supabase
         .from('organizations')
         .select('*')
@@ -377,9 +389,36 @@ export default function InvoicesPage() {
 
       {/* Tax Invoice Modal formatted strictly with Discount & Total columns */}
       {selectedInvoice && (
-        <div className="invoice-print-modal fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
+        <div className={`invoice-print-modal printer-${printerFormat} fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-visible`}>
           <div className="invoice-print-content bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:m-0 print:p-4 print:text-[11px] print:leading-tight">
             
+            <style jsx global>{`
+              .thermal-only { display: none; }
+              @page a4Invoice { size: A4 portrait; margin: 0; }
+              @page thermal80Invoice { size: 80mm auto; margin: 0; }
+              @page thermal58Invoice { size: 58mm auto; margin: 0; }
+              @media print {
+                html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
+                body { overflow: visible !important; }
+                body * { visibility: hidden !important; }
+                .invoice-print-modal, .invoice-print-modal * { visibility: visible !important; }
+                .invoice-print-modal { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; height: auto !important; min-height: 0 !important; padding: 0 !important; margin: 0 !important; display: block !important; background: white !important; overflow: visible !important; }
+                .invoice-print-content { min-height: 0 !important; background: white !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; box-sizing: border-box !important; margin: 0 !important; }
+                .printer-a4 .invoice-print-content { page: a4Invoice; width: 210mm !important; max-width: 210mm !important; padding: 8mm !important; page-break-inside: avoid !important; break-inside: avoid-page !important; }
+                .printer-thermal80 .invoice-print-content { page: thermal80Invoice; width: 80mm !important; max-width: 80mm !important; padding: 3mm !important; font-size: 9px !important; }
+                .printer-thermal58 .invoice-print-content { page: thermal58Invoice; width: 58mm !important; max-width: 58mm !important; padding: 2.5mm !important; font-size: 8px !important; }
+                .printer-thermal80 .a4-only, .printer-thermal58 .a4-only { display: none !important; }
+                .printer-thermal80 .thermal-only, .printer-thermal58 .thermal-only { display: block !important; }
+                .printer-thermal80 .thermal-center, .printer-thermal58 .thermal-center { text-align: center !important; }
+                .printer-thermal80 .thermal-row, .printer-thermal58 .thermal-row { display: flex !important; justify-content: space-between !important; gap: 2mm !important; }
+                .printer-thermal80 .thermal-item-name, .printer-thermal58 .thermal-item-name { font-weight: 700 !important; overflow-wrap: anywhere !important; }
+                .printer-thermal80 .thermal-small { font-size: 8px !important; }
+                .printer-thermal58 .thermal-small { font-size: 7px !important; }
+                .printer-thermal80 .thermal-total, .printer-thermal58 .thermal-total { font-size: 11px !important; font-weight: 900 !important; }
+                .print\:hidden { display: none !important; }
+              }
+            `}</style>
+
             <div className="flex justify-between items-start border-b border-slate-200 pb-3 print:hidden">
               <div>
                 <h3 className="text-lg font-black text-slate-950">GST Tax Invoice</h3>
@@ -420,6 +459,7 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
+              <div className="a4-only">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black print:bg-slate-200">
@@ -452,8 +492,56 @@ export default function InvoicesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
 
-              <div className="border-t border-slate-200 pt-2 space-y-1 text-right font-semibold">
+              <div className="thermal-only text-xs">
+                <div className="thermal-center border-b border-slate-300 pb-2 mb-2">
+                  <div className="font-black text-sm">{orgProfile.trading_name}</div>
+                  <div>{orgProfile.address}</div>
+                  <div>GSTIN: {orgProfile.gstin}</div>
+                  <div className="font-bold mt-1">TAX INVOICE</div>
+                </div>
+
+                <div className="border-b border-slate-300 pb-2 mb-2">
+                  <div className="thermal-row"><span>Invoice</span><strong>{selectedInvoice.invoice_number}</strong></div>
+                  <div className="thermal-row"><span>Date</span><span>{new Date(selectedInvoice.created_at).toLocaleString()}</span></div>
+                  <div className="thermal-row"><span>Customer</span><span className="text-right">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</span></div>
+                  <div className="thermal-row"><span>Phone</span><span>{selectedInvoice.customers?.phone || 'N/A'}</span></div>
+                </div>
+
+                <div className="border-b border-slate-300 pb-2 mb-2">
+                  {selectedInvoice.sale_items?.map((item: any, idx: number) => {
+                    const qty = Number(item.quantity_sold) || 1;
+                    const unitPrice = Number(item.unit_price) || 0;
+                    const grossItemTotal = unitPrice * qty;
+                    const netItemTotal = Number(item.total_price) || 0;
+                    const itemDiscVal = Math.max(0, grossItemTotal - netItemTotal);
+                    return (
+                      <div key={idx} className="mb-2">
+                        <div className="thermal-row"><span className="thermal-item-name flex-1">{item.products?.product_name || 'Pharmaceutical Item'}</span><strong>₹{netItemTotal.toFixed(2)}</strong></div>
+                        <div className="thermal-row thermal-small text-slate-600"><span>Qty {qty} × ₹{unitPrice.toFixed(2)}</span><span>GST {item.gst_percent}%</span></div>
+                        <div className="thermal-small text-slate-500">Batch: {item.product_batches?.batch_number || 'DEFAULT'}{itemDiscVal > 0 ? ` • Disc: ₹${itemDiscVal.toFixed(2)}` : ''}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="thermal-row"><span>Subtotal</span><span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span></div>
+                  {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
+                    <div className="thermal-row"><span>Discount</span><span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span></div>
+                  )}
+                  <div className="thermal-row"><span>Included GST</span><span>₹{Number(selectedInvoice.gst_total || 0).toFixed(2)}</span></div>
+                  <div className="thermal-row thermal-total border-t border-slate-300 pt-1 mt-1"><span>NET PAYABLE</span><span>₹{Number(selectedInvoice.final_amount).toFixed(2)}</span></div>
+                </div>
+
+                <div className="thermal-center border-t border-slate-300 mt-2 pt-2 thermal-small">
+                  Certified that the particulars given above are true and correct.<br />
+                  Computer Generated Tax Invoice.
+                </div>
+              </div>
+
+              <div className="a4-only border-t border-slate-200 pt-2 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
                   <span>Gross Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
@@ -477,71 +565,13 @@ export default function InvoicesPage() {
               <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100 font-medium">
                 Certified that the particulars given above are true and correct. Computer Generated Tax Invoice.
               </div>
+              </div>
             </div>
 
           </div>
         </div>
       )}
-      <style jsx global>{`
-        @media print {
-          @page {
-            margin: 0;
-          }
 
-          html,
-          body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-
-          body {
-            overflow: hidden !important;
-          }
-
-          body * {
-            visibility: hidden !important;
-          }
-
-          .invoice-print-modal,
-          .invoice-print-modal * {
-            visibility: visible !important;
-          }
-
-          .invoice-print-modal {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            display: block !important;
-            background: white !important;
-            overflow: visible !important;
-            page-break-after: avoid !important;
-            break-after: avoid-page !important;
-          }
-
-          .invoice-print-content {
-            width: 100% !important;
-            max-width: none !important;
-            min-height: 0 !important;
-            margin: 0 !important;
-            padding: 8mm !important;
-            box-sizing: border-box !important;
-            background: white !important;
-            border: none !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-            page-break-after: avoid !important;
-            break-after: avoid-page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid-page !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
