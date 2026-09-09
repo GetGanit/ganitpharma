@@ -800,10 +800,10 @@ export default function POSPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-hero-gradient">
+    <div className="flex-1 flex flex-col min-w-0 bg-hero-gradient print:min-h-0">
       
       {/* Top Metadata Panel */}
-      <div className="bg-white/80 backdrop-blur-md border-b border-slate-200/80 p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-bold">
+      <div className="bg-white/80 backdrop-blur-md border-b border-slate-200/80 p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-bold print:hidden">
         <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-2 shadow-sm">
           <div className="flex justify-between items-center">
             <span className="text-slate-500">Telephone / Phone No <span className="text-red-500">*</span>:</span>
@@ -876,7 +876,7 @@ export default function POSPage() {
       </div>
 
       {/* Center Grid */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4 print:hidden">
         
         <div className="lg:col-span-3 flex flex-col space-y-4">
           {error && (
@@ -1637,41 +1637,70 @@ export default function POSPage() {
 
       {/* Tax Invoice Modal for Viewing / Printing / Reprinting formatted strictly for 1-page print */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:text-[11px] print:leading-tight">
+        <div className="invoice-print-modal fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white print:overflow-hidden">
+          <div className="invoice-print-content bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:p-2 print:m-0 print:text-[11px] print:leading-tight">
             
             <style jsx global>{`
               @media print {
                 @page {
-                  size: portrait;
+                  size: A4 portrait;
                   margin: 0;
                 }
-                body, html {
-                  height: 100% !important;
-                  max-height: 100vh !important;
-                  overflow: hidden !important;
+
+                html,
+                body {
+                  margin: 0 !important;
+                  padding: 0 !important;
                   background: white !important;
                 }
+
+                body {
+                  overflow: hidden !important;
+                }
+
                 body * {
                   visibility: hidden !important;
                 }
-                .fixed.inset-0, .fixed.inset-0 * {
+
+                .invoice-print-modal,
+                .invoice-print-modal * {
                   visibility: visible !important;
                 }
-                .fixed.inset-0 {
+
+                .invoice-print-modal {
                   position: absolute !important;
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
                   height: auto !important;
-                  background: white !important;
-                  display: block !important;
-                  padding: 8mm !important;
+                  min-height: 0 !important;
+                  padding: 0 !important;
                   margin: 0 !important;
+                  display: block !important;
+                  background: white !important;
+                  overflow: visible !important;
                   page-break-after: avoid !important;
-                  page-break-inside: avoid !important;
+                  break-after: avoid-page !important;
                 }
-                .print\\:hidden {
+
+                .invoice-print-content {
+                  width: 210mm !important;
+                  max-width: 210mm !important;
+                  min-height: 0 !important;
+                  margin: 0 auto !important;
+                  padding: 8mm !important;
+                  box-sizing: border-box !important;
+                  background: white !important;
+                  border: none !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  page-break-after: avoid !important;
+                  break-after: avoid-page !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid-page !important;
+                }
+
+                .print\:hidden {
                   display: none !important;
                 }
               }
