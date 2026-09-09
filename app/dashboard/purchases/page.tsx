@@ -196,6 +196,17 @@ export default function PurchasesPage() {
     }
 
     try {
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, product_name')
+        .eq('organization_id', orgId);
+
+      const productMap = new Map<string, string>();
+      existingProducts?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
+
+      const newProductsToInsert: any[] = [];
+      const batchRowsToPrepare: { row: any; productNameKey: string }[] = [];
+
       for (const rawRow of parsedData) {
         const row: any = {};
         Object.keys(rawRow).forEach(k => {
@@ -206,6 +217,7 @@ export default function PurchasesPage() {
         const productName = row.productname || row.itemname || row.item || row.name;
         if (!productName) continue;
 
+        const key = productName.toLowerCase().trim();
         const brand = row.brand || row.manufacturer || 'General';
         const category = row.category || 'Allopathy';
         const unit = row.unit || 'tablet';
@@ -213,54 +225,71 @@ export default function PurchasesPage() {
         const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
         const gstRate = Number(row.gstrate || row.gst) || 12;
 
-        const { data: prodData } = await supabase
-          .from('products')
-          .insert([{
-            organization_id: orgId,
-            product_name: productName,
-            brand: brand,
-            category: category,
-            unit: unit,
-            pack_size: packSize,
-            units_per_pack: unitsPerPack,
-            gst_rate: gstRate
-          }])
-          .select('id')
-          .single();
-
-        let productId = prodData?.id;
-        if (!productId) {
-          const { data: existing } = await supabase
-            .from('products')
-            .select('id')
-            .eq('organization_id', orgId)
-            .eq('product_name', productName)
-            .single();
-          if (existing) productId = existing.id;
+        if (!productMap.has(key)) {
+          if (!newProductsToInsert.some(p => p.product_name.toLowerCase().trim() === key)) {
+            newProductsToInsert.push({
+              organization_id: orgId,
+              product_name: productName,
+              brand: brand,
+              category: category,
+              unit: unit,
+              pack_size: packSize,
+              units_per_pack: unitsPerPack,
+              gst_rate: gstRate
+            });
+          }
         }
 
-        if (productId) {
-          const batchNumber = row.batchnumber || row.batch || row.batchno || 'BATCH01';
-          const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
-          const mrp = Number(row.mrp) || 100;
-          const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || 50;
-          const sellingRate = Number(row.sellingrate || row.srp) || 80;
-          const stockQty = Number(row.stockqty || row.quantity || row.qty) || 100;
+        batchRowsToPrepare.push({ row, productNameKey: key });
+      }
 
-          await supabase.from('product_batches').insert([{
-            organization_id: orgId,
-            product_id: productId,
-            batch_number: batchNumber,
-            expiry_date: expiryDate,
-            mrp: mrp,
-            purchase_rate: purchaseRate,
-            selling_rate: sellingRate,
-            stock_qty: stockQty
-          }]);
+      if (newProductsToInsert.length > 0) {
+        for (let i = 0; i < newProductsToInsert.length; i += 500) {
+          const chunk = newProductsToInsert.slice(i, i + 500);
+          const { data: inserted, error: insErr } = await supabase
+            .from('products')
+            .insert(chunk)
+            .select('id, product_name');
+
+          if (insErr) throw insErr;
+          inserted?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
         }
       }
 
-      setSuccessMsg(`Successfully imported ${parsedData.length} SKUs into inventory!`);
+      const batchesToInsert: any[] = [];
+      for (const item of batchRowsToPrepare) {
+        const productId = productMap.get(item.productNameKey);
+        if (!productId) continue;
+
+        const row = item.row;
+        const batchNumber = row.batchnumber || row.batch || row.batchno || 'BATCH01';
+        const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
+        const mrp = Number(row.mrp) || 100;
+        const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || 50;
+        const sellingRate = Number(row.sellingrate || row.srp) || 80;
+        const stockQty = Number(row.stockqty || row.quantity || row.qty) || 100;
+
+        batchesToInsert.push({
+          organization_id: orgId,
+          product_id: productId,
+          batch_number: batchNumber,
+          expiry_date: expiryDate,
+          mrp: mrp,
+          purchase_rate: purchaseRate,
+          selling_rate: sellingRate,
+          stock_qty: stockQty
+        });
+      }
+
+      if (batchesToInsert.length > 0) {
+        for (let i = 0; i < batchesToInsert.length; i += 500) {
+          const chunk = batchesToInsert.slice(i, i + 500);
+          const { error: batchErr } = await supabase.from('product_batches').insert(chunk);
+          if (batchErr) throw batchErr;
+        }
+      }
+
+      setSuccessMsg(`Successfully imported ${batchesToInsert.length} SKUs into inventory!`);
       setParsedData([]);
       setFile(null);
       setTimeout(() => setViewMode('list'), 2000);
@@ -289,6 +318,17 @@ export default function PurchasesPage() {
     }
 
     try {
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, product_name')
+        .eq('organization_id', orgId);
+
+      const productMap = new Map<string, string>();
+      existingProducts?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
+
+      const newProductsToInsert: any[] = [];
+      const batchRowsToPrepare: { row: any; productNameKey: string }[] = [];
+
       for (const rawRow of parsedData) {
         const row: any = {};
         Object.keys(rawRow).forEach(k => {
@@ -299,6 +339,7 @@ export default function PurchasesPage() {
         const productName = row.productname || row.itemname || row.item || row.name;
         if (!productName) continue;
 
+        const key = productName.toLowerCase().trim();
         const brand = row.brand || row.manufacturer || 'General';
         const saltName = row.saltname || row.salt || row.composition || '';
         const category = row.category || 'Allopathy';
@@ -306,55 +347,72 @@ export default function PurchasesPage() {
         const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
         const gstRate = Number(row.gstrate || row.gst) || 12;
 
-        const { data: prodData } = await supabase
-          .from('products')
-          .insert([{
-            organization_id: orgId,
-            product_name: productName,
-            brand: brand,
-            salt_name: saltName,
-            category: category,
-            unit: 'tablet',
-            pack_size: packSize,
-            units_per_pack: unitsPerPack,
-            gst_rate: gstRate
-          }])
-          .select('id')
-          .single();
-
-        let productId = prodData?.id;
-        if (!productId) {
-          const { data: existing } = await supabase
-            .from('products')
-            .select('id')
-            .eq('organization_id', orgId)
-            .eq('product_name', productName)
-            .single();
-          if (existing) productId = existing.id;
+        if (!productMap.has(key)) {
+          if (!newProductsToInsert.some(p => p.product_name.toLowerCase().trim() === key)) {
+            newProductsToInsert.push({
+              organization_id: orgId,
+              product_name: productName,
+              brand: brand,
+              salt_name: saltName,
+              category: category,
+              unit: 'tablet',
+              pack_size: packSize,
+              units_per_pack: unitsPerPack,
+              gst_rate: gstRate
+            });
+          }
         }
 
-        if (productId) {
-          const batchNumber = row.batchnumber || row.batch || row.batchno || 'OPEN01';
-          const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
-          const mrp = Number(row.mrp) || 100;
-          const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || (mrp * 0.6);
-          const sellingRate = Number(row.sellingrate || row.srp) || (mrp * 0.85);
-          const openingQty = Number(row.stockqty || row.openingstock || row.quantity || row.qty) || 0;
+        batchRowsToPrepare.push({ row, productNameKey: key });
+      }
 
-          await supabase.from('product_batches').insert([{
-            organization_id: orgId,
-            product_id: productId,
-            batch_number: batchNumber,
-            expiry_date: expiryDate,
-            mrp: mrp,
-            purchase_rate: purchaseRate,
-            selling_rate: sellingRate,
-            stock_qty: openingQty
-          }]);
+      if (newProductsToInsert.length > 0) {
+        for (let i = 0; i < newProductsToInsert.length; i += 500) {
+          const chunk = newProductsToInsert.slice(i, i + 500);
+          const { data: inserted, error: insErr } = await supabase
+            .from('products')
+            .insert(chunk)
+            .select('id, product_name');
+
+          if (insErr) throw insErr;
+          inserted?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
         }
       }
 
-      setSuccessMsg(`Successfully migrated opening stock for ${parsedData.length} items!`);
+      const batchesToInsert: any[] = [];
+      for (const item of batchRowsToPrepare) {
+        const productId = productMap.get(item.productNameKey);
+        if (!productId) continue;
+
+        const row = item.row;
+        const batchNumber = row.batchnumber || row.batch || row.batchno || 'OPEN01';
+        const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
+        const mrp = Number(row.mrp) || 100;
+        const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || (mrp * 0.6);
+        const sellingRate = Number(row.sellingrate || row.srp) || (mrp * 0.85);
+        const openingQty = Number(row.stockqty || row.openingstock || row.quantity || row.qty) || 0;
+
+        batchesToInsert.push({
+          organization_id: orgId,
+          product_id: productId,
+          batch_number: batchNumber,
+          expiry_date: expiryDate,
+          mrp: mrp,
+          purchase_rate: purchaseRate,
+          selling_rate: sellingRate,
+          stock_qty: openingQty
+        });
+      }
+
+      if (batchesToInsert.length > 0) {
+        for (let i = 0; i < batchesToInsert.length; i += 500) {
+          const chunk = batchesToInsert.slice(i, i + 500);
+          const { error: batchErr } = await supabase.from('product_batches').insert(chunk);
+          if (batchErr) throw batchErr;
+        }
+      }
+
+      setSuccessMsg(`Successfully migrated opening stock for ${batchesToInsert.length} items!`);
       setParsedData([]);
       setFile(null);
       setTimeout(() => setViewMode('list'), 2000);
