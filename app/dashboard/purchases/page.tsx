@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft, Trash2, Building2 } from 'lucide-react';
+import { Truck, Plus, FileSpreadsheet, CheckCircle2, AlertCircle, ArrowLeft, Trash2, Building2, Database } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface POItem {
@@ -21,7 +21,7 @@ export default function PurchasesPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [vendorsList, setVendorsList] = useState<any[]>([]);
   
-  const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po' | 'new_vendor'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po' | 'new_vendor' | 'opening_stock'>('list');
   
   // CSV/Excel Import State
   const [file, setFile] = useState<File | null>(null);
@@ -199,18 +199,34 @@ export default function PurchasesPage() {
     }
 
     try {
-      for (const row of parsedData) {
+      for (const rawRow of parsedData) {
+        const row: any = {};
+        Object.keys(rawRow).forEach(k => {
+          const cleanKey = k.toLowerCase().replace(/[\s_]+/g, '');
+          row[cleanKey] = rawRow[k];
+        });
+
+        const productName = row.productname || row.itemname || row.item || row.name;
+        if (!productName) continue;
+
+        const brand = row.brand || row.manufacturer || 'General';
+        const category = row.category || 'Allopathy';
+        const unit = row.unit || 'tablet';
+        const packSize = row.packsize || row.pack || '15s';
+        const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
+        const gstRate = Number(row.gstrate || row.gst) || 12;
+
         const { data: prodData } = await supabase
           .from('products')
           .insert([{
             organization_id: orgId,
-            product_name: row.product_name,
-            brand: row.brand || 'General',
-            category: row.category || 'Allopathy',
-            unit: row.unit || 'tablet',
-            pack_size: row.pack_size || '15s',
-            units_per_pack: Number(row.units_per_pack) || 15,
-            gst_rate: Number(row.gst_rate) || 12
+            product_name: productName,
+            brand: brand,
+            category: category,
+            unit: unit,
+            pack_size: packSize,
+            units_per_pack: unitsPerPack,
+            gst_rate: gstRate
           }])
           .select('id')
           .single();
@@ -221,21 +237,28 @@ export default function PurchasesPage() {
             .from('products')
             .select('id')
             .eq('organization_id', orgId)
-            .eq('product_name', row.product_name)
+            .eq('product_name', productName)
             .single();
           if (existing) productId = existing.id;
         }
 
         if (productId) {
+          const batchNumber = row.batchnumber || row.batch || row.batchno || 'BATCH01';
+          const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
+          const mrp = Number(row.mrp) || 100;
+          const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || 50;
+          const sellingRate = Number(row.sellingrate || row.srp) || 80;
+          const stockQty = Number(row.stockqty || row.quantity || row.qty) || 100;
+
           await supabase.from('product_batches').insert([{
             organization_id: orgId,
             product_id: productId,
-            batch_number: row.batch_number || 'BATCH01',
-            expiry_date: row.expiry_date || '2028-12-31',
-            mrp: Number(row.mrp) || 100,
-            purchase_rate: Number(row.purchase_rate) || 50,
-            selling_rate: Number(row.selling_rate) || 80,
-            stock_qty: Number(row.stock_qty) || 100
+            batch_number: batchNumber,
+            expiry_date: expiryDate,
+            mrp: mrp,
+            purchase_rate: purchaseRate,
+            selling_rate: sellingRate,
+            stock_qty: stockQty
           }]);
         }
       }
@@ -246,6 +269,99 @@ export default function PurchasesPage() {
       setTimeout(() => setViewMode('list'), 2000);
     } catch (err: any) {
       setError(err.message || 'Import failed.');
+    }
+    setImporting(false);
+  };
+
+  const handleOpeningStockImport = async () => {
+    if (parsedData.length === 0) return;
+    setImporting(true);
+    setError(null);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const orgId = user.user_metadata?.organization_id;
+    if (!orgId) {
+      setError('Organization ID not found.');
+      setImporting(false);
+      return;
+    }
+
+    try {
+      for (const rawRow of parsedData) {
+        const row: any = {};
+        Object.keys(rawRow).forEach(k => {
+          const cleanKey = k.toLowerCase().replace(/[\s_]+/g, '');
+          row[cleanKey] = rawRow[k];
+        });
+
+        const productName = row.productname || row.itemname || row.item || row.name;
+        if (!productName) continue;
+
+        const brand = row.brand || row.manufacturer || 'General';
+        const category = row.category || 'Allopathy';
+        const unit = row.unit || 'tablet';
+        const packSize = row.packsize || row.pack || '15s';
+        const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
+        const gstRate = Number(row.gstrate || row.gst) || 12;
+
+        const { data: prodData } = await supabase
+          .from('products')
+          .insert([{
+            organization_id: orgId,
+            product_name: productName,
+            brand: brand,
+            category: category,
+            unit: unit,
+            pack_size: packSize,
+            units_per_pack: unitsPerPack,
+            gst_rate: gstRate
+          }])
+          .select('id')
+          .single();
+
+        let productId = prodData?.id;
+        if (!productId) {
+          const { data: existing } = await supabase
+            .from('products')
+            .select('id')
+            .eq('organization_id', orgId)
+            .eq('product_name', productName)
+            .single();
+          if (existing) productId = existing.id;
+        }
+
+        if (productId) {
+          const batchNumber = row.batchnumber || row.batch || row.batchno || 'OPEN01';
+          const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
+          const mrp = Number(row.mrp) || 100;
+          const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || (mrp * 0.6);
+          const sellingRate = Number(row.sellingrate || row.srp) || (mrp * 0.85);
+          const openingQty = Number(row.stockqty || row.openingstock || row.quantity || row.qty) || 0;
+
+          await supabase.from('product_batches').insert([{
+            organization_id: orgId,
+            product_id: productId,
+            batch_number: batchNumber,
+            expiry_date: expiryDate,
+            mrp: mrp,
+            purchase_rate: purchaseRate,
+            selling_rate: sellingRate,
+            stock_qty: openingQty
+          }]);
+        }
+      }
+
+      setSuccessMsg(`Successfully migrated opening stock for ${parsedData.length} items!`);
+      setParsedData([]);
+      setFile(null);
+      setTimeout(() => setViewMode('list'), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Opening stock migration failed.');
     }
     setImporting(false);
   };
@@ -349,15 +465,21 @@ export default function PurchasesPage() {
       
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/85 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-950 tracking-tight">Purchases</h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">Receiving a purchase order creates the batches automatically, so stock is sellable at once.</p>
+          <h1 className="text-2xl font-black text-slate-950 tracking-tight">Purchases & Inventory Inward</h1>
+          <p className="text-xs text-slate-500 font-medium mt-1">Manage purchase orders, distributor invoices, or migrate opening stock for established shops.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => { setParsedDataSet([]); setViewMode('opening_stock'); }}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs px-4 py-2.5 rounded-2xl border border-emerald-300 shadow-sm transition flex items-center gap-1.5"
+          >
+            <Database className="w-4 h-4 text-emerald-600" /> Migrate opening stock
+          </button>
           <button
             onClick={() => setViewMode('import')}
             className="bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-2xl border border-slate-300 shadow-sm transition flex items-center gap-1.5"
           >
-            <FileSpreadsheet className="w-4 h-4 text-amber-500" /> Import distributor invoice
+            <FileSpreadsheet className="w-4 h-4 text-amber-500" /> Import invoice
           </button>
           <button
             onClick={() => setViewMode('new_vendor')}
@@ -467,7 +589,7 @@ export default function PurchasesPage() {
 
           <div>
             <h3 className="text-base font-bold text-slate-950">Distributor Bill CSV / Excel Import</h3>
-            <p className="text-xs text-slate-500 mt-1 font-medium">Upload your distributor invoice in CSV or Excel (.xlsx, .xls) format to map columns and update inventory.</p>
+            <p className="text-xs text-slate-500 mt-1 font-medium">Upload distributor invoice in any column order. Headers will auto-map.</p>
           </div>
 
           <input
@@ -484,7 +606,7 @@ export default function PurchasesPage() {
           >
             <Truck className="w-6 h-6 text-slate-400" />
             <p className="text-xs font-bold text-slate-700">
-              {file ? `Selected file: ${file.name}` : 'Click to upload or select CSV / Excel bill file'}
+              {file ? `Selected file: ${file.name}` : 'Click to upload distributor bill file'}
             </p>
             <button
               type="button"
@@ -512,22 +634,103 @@ export default function PurchasesPage() {
                   <thead className="bg-slate-50 text-slate-600 sticky top-0 font-bold">
                     <tr>
                       <th className="p-3">Product Name</th>
-                      <th className="p-3">Brand</th>
                       <th className="p-3">Batch</th>
                       <th className="p-3">Expiry</th>
                       <th className="p-3">MRP</th>
-                      <th className="p-3">Stock Qty</th>
+                      <th className="p-3">Qty</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {parsedData.map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name']}</td>
-                        <td className="p-3 text-slate-600">{row.brand || row['Brand']}</td>
-                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch']}</td>
-                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry']}</td>
+                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name']}</td>
+                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber']}</td>
+                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate']}</td>
                         <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
-                        <td className="p-3 font-bold text-amber-700">{row.stock_qty || row['Quantity']}</td>
+                        <td className="p-3 font-bold text-amber-700">{row.stock_qty || row['Quantity'] || row['Qty']}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {viewMode === 'opening_stock' && (
+        <div className="bg-white/95 backdrop-blur-md p-8 rounded-3xl border border-emerald-200 shadow-sm space-y-6 text-center max-w-3xl mx-auto">
+          <button onClick={() => setViewMode('list')} className="text-xs font-bold text-slate-600 flex items-center gap-1 hover:text-slate-950">
+            <ArrowLeft className="w-4 h-4" /> Back to Purchases
+          </button>
+
+          <div className="w-12 h-12 bg-emerald-100 text-emerald-800 rounded-2xl mx-auto flex items-center justify-center font-bold">
+            <Database className="w-6 h-6 text-emerald-600" />
+          </div>
+
+          <div>
+            <h3 className="text-base font-bold text-slate-950">Migrate Existing Opening Stock</h3>
+            <p className="text-xs text-slate-500 mt-1 font-medium">
+              For established stores transitioning to software. Upload your physical count spreadsheet with current remaining quantities, actual selling prices/MRP, and batches without creating purchase orders.
+            </p>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv, .xlsx, .xls"
+            onChange={(e) => e.target.files && handleFileChange(e.target.files[0])}
+            className="hidden"
+          />
+
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-2xl p-8 cursor-pointer transition flex flex-col items-center justify-center space-y-3 bg-emerald-50/30"
+          >
+            <Database className="w-6 h-6 text-emerald-500" />
+            <p className="text-xs font-bold text-slate-700">
+              {file ? `Selected file: ${file.name}` : 'Click to upload current physical stock spreadsheet'}
+            </p>
+            <button
+              type="button"
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow transition"
+            >
+              Select Stock File (.xlsx, .xls, .csv)
+            </button>
+          </div>
+
+          {parsedData.length > 0 && (
+            <div className="space-y-4 pt-4 border-t border-slate-100 text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-900">Opening Stock Preview ({parsedData.length} items ready)</span>
+                <button
+                  onClick={handleOpeningStockImport}
+                  disabled={importing}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs shadow transition disabled:opacity-50"
+                >
+                  {importing ? 'Migrating Stock...' : 'Confirm & Initialize Opening Stock'}
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-emerald-50 text-emerald-800 sticky top-0 font-bold">
+                    <tr>
+                      <th className="p-3">Product Name</th>
+                      <th className="p-3">Batch</th>
+                      <th className="p-3">Expiry</th>
+                      <th className="p-3">MRP</th>
+                      <th className="p-3">Current Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {parsedData.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name']}</td>
+                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber']}</td>
+                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate']}</td>
+                        <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
+                        <td className="p-3 font-bold text-emerald-700">{row.stock_qty || row['Opening Stock'] || row['Quantity'] || row['Qty']}</td>
                       </tr>
                     ))}
                   </tbody>
