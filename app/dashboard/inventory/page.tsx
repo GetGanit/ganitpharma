@@ -28,7 +28,6 @@ export default function InventoryPage() {
   const [newProduct, setNewProduct] = useState({
     product_name: '',
     brand: '',
-    salt_name: '',
     category: 'Allopathy',
     pack_size: '15s',
     units_per_pack: 15,
@@ -204,6 +203,17 @@ export default function InventoryPage() {
     }
 
     try {
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, product_name')
+        .eq('organization_id', orgId);
+
+      const productMap = new Map<string, string>();
+      existingProducts?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
+
+      const newProductsToInsert: any[] = [];
+      const batchRowsToPrepare: { row: any; productNameKey: string }[] = [];
+
       for (const rawRow of parsedData) {
         const row: any = {};
         Object.keys(rawRow).forEach(k => {
@@ -214,62 +224,78 @@ export default function InventoryPage() {
         const productName = row.productname || row.itemname || row.item || row.name;
         if (!productName) continue;
 
+        const key = productName.toLowerCase().trim();
         const brand = row.brand || row.manufacturer || 'General';
-        const saltName = row.saltname || row.salt || row.composition || '';
         const category = row.category || 'Allopathy';
         const packSize = row.packsize || row.pack || '15s';
         const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
         const gstRate = Number(row.gstrate || row.gst) || 12;
 
-        const { data: prodData } = await supabase
-          .from('products')
-          .insert([{
-            organization_id: orgId,
-            product_name: productName,
-            brand: brand,
-            salt_name: saltName,
-            category: category,
-            unit: 'tablet',
-            pack_size: packSize,
-            units_per_pack: unitsPerPack,
-            gst_rate: gstRate
-          }])
-          .select('id')
-          .single();
-
-        let productId = prodData?.id;
-        if (!productId) {
-          const { data: existing } = await supabase
-            .from('products')
-            .select('id')
-            .eq('organization_id', orgId)
-            .eq('product_name', productName)
-            .single();
-          if (existing) productId = existing.id;
+        if (!productMap.has(key)) {
+          if (!newProductsToInsert.some(p => p.product_name.toLowerCase().trim() === key)) {
+            newProductsToInsert.push({
+              organization_id: orgId,
+              product_name: productName,
+              brand: brand,
+              category: category,
+              unit: 'tablet',
+              pack_size: packSize,
+              units_per_pack: unitsPerPack,
+              gst_rate: gstRate
+            });
+          }
         }
 
-        if (productId) {
-          const batchNumber = row.batchnumber || row.batch || row.batchno || 'OPEN01';
-          const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
-          const mrp = Number(row.mrp) || 100;
-          const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || (mrp * 0.6);
-          const sellingRate = Number(row.sellingrate || row.srp) || (mrp * 0.85);
-          const openingQty = Number(row.stockqty || row.openingstock || row.quantity || row.qty) || 0;
+        batchRowsToPrepare.push({ row, productNameKey: key });
+      }
 
-          await supabase.from('product_batches').insert([{
-            organization_id: orgId,
-            product_id: productId,
-            batch_number: batchNumber,
-            expiry_date: expiryDate,
-            mrp: mrp,
-            purchase_rate: purchaseRate,
-            selling_rate: sellingRate,
-            stock_qty: openingQty
-          }]);
+      if (newProductsToInsert.length > 0) {
+        for (let i = 0; i < newProductsToInsert.length; i += 500) {
+          const chunk = newProductsToInsert.slice(i, i + 500);
+          const { data: inserted, error: insErr } = await supabase
+            .from('products')
+            .insert(chunk)
+            .select('id, product_name');
+
+          if (insErr) throw insErr;
+          inserted?.forEach(p => productMap.set(p.product_name.toLowerCase().trim(), p.id));
         }
       }
 
-      setSuccessMsg(`Successfully migrated opening stock for ${parsedData.length} items!`);
+      const batchesToInsert: any[] = [];
+      for (const item of batchRowsToPrepare) {
+        const productId = productMap.get(item.productNameKey);
+        if (!productId) continue;
+
+        const row = item.row;
+        const batchNumber = row.batchnumber || row.batch || row.batchno || 'OPEN01';
+        const expiryDate = row.expirydate || row.expiry || row.exp || '2028-12-31';
+        const mrp = Number(row.mrp) || 100;
+        const purchaseRate = Number(row.purchaserate || row.cost || row.rate) || (mrp * 0.6);
+        const sellingRate = Number(row.sellingrate || row.srp) || (mrp * 0.85);
+        const openingQty = Number(row.stockqty || row.openingstock || row.quantity || row.qty) || 0;
+
+        batchesToInsert.push({
+          organization_id: orgId,
+          product_id: productId,
+          batch_number: batchNumber,
+          expiry_date: expiryDate,
+          mrp: mrp,
+          purchase_rate: purchaseRate,
+          selling_rate: sellingRate,
+          stock_qty: openingQty
+        });
+      }
+
+      if (batchesToInsert.length > 0) {
+        for (let i = 0; i < batchesToInsert.length; i += 500) {
+          const chunk = batchesToInsert.slice(i, i + 500);
+          const { error: batchErr } = await supabase.from('product_batches').insert(chunk);
+          if (batchErr) throw batchErr;
+        }
+      }
+
+      setSuccessMsg(`Successfully migrated opening stock for ${batchesToInsert.length} items!`);
       setParsedData([]);
       setFile(null);
       setTimeout(() => {
@@ -297,7 +323,6 @@ export default function InventoryPage() {
           organization_id: orgId,
           product_name: newProduct.product_name,
           brand: newProduct.brand,
-          salt_name: newProduct.salt_name,
           category: newProduct.category,
           unit: 'tablet',
           pack_size: newProduct.pack_size,
@@ -336,7 +361,6 @@ export default function InventoryPage() {
       setNewProduct({
         product_name: '',
         brand: '',
-        salt_name: '',
         category: 'Allopathy',
         pack_size: '15s',
         units_per_pack: 15,
@@ -421,7 +445,7 @@ export default function InventoryPage() {
                 <table className="w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-200">
                     <tr>
-                      <th className="p-4 font-semibold">Product & Salt Name</th>
+                      <th className="p-4 font-semibold">Product Name</th>
                       <th className="p-4 font-semibold">Brand / Manufacturer</th>
                       <th className="p-4 font-semibold">Pack Size</th>
                       <th className="p-4 font-semibold">GST %</th>
@@ -441,10 +465,7 @@ export default function InventoryPage() {
                           onClick={() => setSelectedIndex(index)}
                           className={`transition cursor-pointer ${isSelected ? 'bg-amber-50/80 border-l-4 border-amber-500' : 'hover:bg-slate-50/50'}`}
                         >
-                          <td className="p-4">
-                            <div className="font-bold text-slate-900">{prod.product_name}</div>
-                            <div className="text-xs text-slate-500 font-medium">{prod.salt_name || 'No salt specified'}</div>
-                          </td>
+                          <td className="p-4 font-bold text-slate-900">{prod.product_name}</td>
                           <td className="p-4 text-slate-600">{prod.brand || 'N/A'}</td>
                           <td className="p-4 text-slate-600">{prod.pack_size}</td>
                           <td className="p-4 text-slate-600">{prod.gst_rate}%</td>
@@ -497,7 +518,7 @@ export default function InventoryPage() {
             <div>
               <h3 className="text-base font-bold text-slate-950">Migrate Existing Opening Stock</h3>
               <p className="text-xs text-slate-500 mt-1 font-medium">
-                Upload your store physical count spreadsheet with proper headers (Product Name, Salt Name, Brand, Batch, Expiry, MRP, Stock Qty). Columns can be in any order.
+                Upload your store physical count spreadsheet. Missing data or columns will automatically use safe default values.
               </p>
             </div>
 
@@ -543,7 +564,6 @@ export default function InventoryPage() {
                     <thead className="bg-emerald-50 text-emerald-800 sticky top-0 font-bold">
                       <tr>
                         <th className="p-3">Product Name</th>
-                        <th className="p-3">Salt Name</th>
                         <th className="p-3">Batch</th>
                         <th className="p-3">Expiry</th>
                         <th className="p-3">MRP</th>
@@ -553,12 +573,11 @@ export default function InventoryPage() {
                     <tbody className="divide-y divide-slate-100 font-medium">
                       {parsedData.map((row, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
-                          <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name']}</td>
-                          <td className="p-3 text-slate-600">{row.salt_name || row['Salt Name'] || row['Salt'] || row['Composition']}</td>
-                          <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber']}</td>
-                          <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate']}</td>
-                          <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
-                          <td className="p-3 font-bold text-emerald-700">{row.stock_qty || row['Opening Stock'] || row['Quantity'] || row['Qty']}</td>
+                          <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name'] || 'Unnamed Product'}</td>
+                          <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber'] || 'OPEN01'}</td>
+                          <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate'] || '2028-12-31'}</td>
+                          <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP'] || 100}</td>
+                          <td className="p-3 font-bold text-emerald-700">{row.stock_qty || row['Opening Stock'] || row['Quantity'] || row['Qty'] || 0}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -575,28 +594,16 @@ export default function InventoryPage() {
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
             <h3 className="text-lg font-bold text-slate-900 mb-4">Add Medicine & Initial Batch</h3>
             <form onSubmit={handleAddProductSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Product Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newProduct.product_name}
-                    onChange={(e) => setNewProduct({ ...newProduct, product_name: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                    placeholder="Dolo 650"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-700">Salt / Composition Name</label>
-                  <input
-                    type="text"
-                    value={newProduct.salt_name}
-                    onChange={(e) => setNewProduct({ ...newProduct, salt_name: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
-                    placeholder="Paracetamol 650mg"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700">Product Name</label>
+                <input
+                  type="text"
+                  required
+                  value={newProduct.product_name}
+                  onChange={(e) => setNewProduct({ ...newProduct, product_name: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-xl text-sm"
+                  placeholder="Dolo 650"
+                />
               </div>
 
               <div>
