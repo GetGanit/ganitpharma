@@ -341,7 +341,6 @@ export default function PurchasesPage() {
 
         const key = productName.toLowerCase().trim();
         const brand = row.brand || row.manufacturer || 'General';
-        const saltName = row.saltname || row.salt || row.composition || '';
         const category = row.category || 'Allopathy';
         const packSize = row.packsize || row.pack || '15s';
         const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
@@ -353,7 +352,6 @@ export default function PurchasesPage() {
               organization_id: orgId,
               product_name: productName,
               brand: brand,
-              salt_name: saltName,
               category: category,
               unit: 'tablet',
               pack_size: packSize,
@@ -727,7 +725,7 @@ export default function PurchasesPage() {
           <div>
             <h3 className="text-base font-bold text-slate-950">Migrate Existing Opening Stock</h3>
             <p className="text-xs text-slate-500 mt-1 font-medium">
-              For established stores transitioning to software. Upload your physical count spreadsheet with current remaining quantities, salt names, actual selling prices/MRP, and batches.
+              For established stores transitioning to software. Upload your physical count spreadsheet. Missing data will automatically use safe default values.
             </p>
           </div>
 
@@ -773,7 +771,6 @@ export default function PurchasesPage() {
                   <thead className="bg-emerald-50 text-emerald-800 sticky top-0 font-bold">
                     <tr>
                       <th className="p-3">Product Name</th>
-                      <th className="p-3">Salt Name</th>
                       <th className="p-3">Batch</th>
                       <th className="p-3">Expiry</th>
                       <th className="p-3">MRP</th>
@@ -783,12 +780,11 @@ export default function PurchasesPage() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {parsedData.map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name']}</td>
-                        <td className="p-3 text-slate-600">{row.salt_name || row['Salt Name'] || row['Salt'] || row['Composition']}</td>
-                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber']}</td>
-                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate']}</td>
-                        <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
-                        <td className="p-3 font-bold text-emerald-700">{row.stock_qty || row['Opening Stock'] || row['Quantity'] || row['Qty']}</td>
+                        <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name'] || 'Unnamed Product'}</td>
+                        <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber'] || 'OPEN01'}</td>
+                        <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate'] || '2028-12-31'}</td>
+                        <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP'] || 100}</td>
+                        <td className="p-3 font-bold text-emerald-700">{row.stock_qty || row['Opening Stock'] || row['Quantity'] || row['Qty'] || 0}</td>
                       </tr>
                     ))}
                   </tbody>
