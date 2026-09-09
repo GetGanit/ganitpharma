@@ -40,7 +40,6 @@ export default function InvoicesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
-      // Fetch organization profile for dynamic pharmacy details
       const { data: orgData } = await supabase
         .from('organizations')
         .select('*')
@@ -193,7 +192,12 @@ export default function InvoicesPage() {
 
   const sendWhatsAppInvoice = (inv: any) => {
     const phone = inv.customers?.phone || '';
-    const itemsSummary = inv.sale_items?.map((i: any) => `- ${i.products?.product_name} (Qty: ${i.quantity_sold}) : ₹${Number(i.total_price).toFixed(2)}`).join('\n') || '';
+    const itemsSummary = inv.sale_items?.map((i: any) => {
+      const listTotal = Number(i.unit_price || 0) * Number(i.quantity_sold || 1);
+      const actualTotal = Number(i.total_price || 0);
+      const disc = Math.max(0, listTotal - actualTotal);
+      return `- ${i.products?.product_name} (Qty: ${i.quantity_sold})${disc > 0 ? ` [Disc: ₹${disc.toFixed(2)}]` : ''} : ₹${actualTotal.toFixed(2)}`;
+    }).join('\n') || '';
     
     const msg = encodeURIComponent(
       `*${orgProfile.trading_name}* - Tax Invoice\n` +
@@ -204,6 +208,9 @@ export default function InvoicesPage() {
       `*Net Payable: ₹${Number(inv.final_amount).toFixed(2)}*\n\n` +
       `Thank you for visiting ${orgProfile.trading_name}!`
     );
+
+    // Trigger PDF print/save dialog simultaneously so user can save PDF to attach in WhatsApp
+    window.print();
     window.open(`https://wa.me/${phone ? '91' + phone : ''}?text=${msg}`, '_blank');
   };
 
@@ -370,7 +377,7 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal formatted strictly for 1 single page print */}
+      {/* Tax Invoice Modal formatted strictly with Discount & Total columns */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:m-0 print:p-4 print:text-[11px] print:leading-tight">
@@ -423,20 +430,28 @@ export default function InvoicesPage() {
                     <th className="p-2">Qty</th>
                     <th className="p-2">Unit Price</th>
                     <th className="p-2">GST %</th>
+                    <th className="p-2">Disc (₹)</th>
                     <th className="p-2 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {selectedInvoice.sale_items?.map((item: any, idx: number) => (
-                    <tr key={idx}>
-                      <td className="p-2 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                      <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                      <td className="p-2">{item.quantity_sold}</td>
-                      <td className="p-2 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
-                      <td className="p-2">{item.gst_percent}%</td>
-                      <td className="p-2 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {selectedInvoice.sale_items?.map((item: any, idx: number) => {
+                    const listTotal = Number(item.unit_price || 0) * Number(item.quantity_sold || 1);
+                    const actualTotal = Number(item.total_price || 0);
+                    const discAmount = Math.max(0, listTotal - actualTotal);
+
+                    return (
+                      <tr key={idx}>
+                        <td className="p-2 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
+                        <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                        <td className="p-2">{item.quantity_sold}</td>
+                        <td className="p-2 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
+                        <td className="p-2">{item.gst_percent}%</td>
+                        <td className="p-2 font-mono text-red-600">{discAmount > 0 ? `₹${discAmount.toFixed(2)}` : '—'}</td>
+                        <td className="p-2 text-right font-black">₹{actualTotal.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
