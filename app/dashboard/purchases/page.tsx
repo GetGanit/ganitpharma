@@ -23,7 +23,6 @@ export default function PurchasesPage() {
   
   const [viewMode, setViewMode] = useState<'list' | 'import' | 'new_po' | 'new_vendor' | 'opening_stock'>('list');
   
-  // CSV/Excel Import State
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
@@ -31,14 +30,12 @@ export default function PurchasesPage() {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New PO State matching reference UI
   const [poVendorId, setPoVendorId] = useState('');
   const [poItems, setPoItems] = useState<POItem[]>([
     { item_name: '', batch_number: '', expiry_date: '', quantity: 1, free_qty: 0, scheme: '', cost: 0, gst_percent: 12 }
   ]);
   const [receiveIntoStock, setReceiveIntoStock] = useState(false);
 
-  // New Vendor Form State
   const [newVendorName, setNewVendorName] = useState('');
   const [newVendorPhone, setNewVendorPhone] = useState('');
   const [newVendorGstin, setNewVendorGstin] = useState('');
@@ -286,7 +283,7 @@ export default function PurchasesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (!orgId) {
-      setError('Organization ID not found.');
+      setError('Pharmacy ID not found.');
       setImporting(false);
       return;
     }
@@ -303,8 +300,8 @@ export default function PurchasesPage() {
         if (!productName) continue;
 
         const brand = row.brand || row.manufacturer || 'General';
+        const saltName = row.saltname || row.salt || row.composition || '';
         const category = row.category || 'Allopathy';
-        const unit = row.unit || 'tablet';
         const packSize = row.packsize || row.pack || '15s';
         const unitsPerPack = Number(row.unitsperpack || row.packqty) || 15;
         const gstRate = Number(row.gstrate || row.gst) || 12;
@@ -315,8 +312,9 @@ export default function PurchasesPage() {
             organization_id: orgId,
             product_name: productName,
             brand: brand,
+            salt_name: saltName,
             category: category,
-            unit: unit,
+            unit: 'tablet',
             pack_size: packSize,
             units_per_pack: unitsPerPack,
             gst_rate: gstRate
@@ -466,11 +464,11 @@ export default function PurchasesPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/85 backdrop-blur-md p-6 rounded-3xl border border-slate-200/80 shadow-sm gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-950 tracking-tight">Purchases & Inventory Inward</h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">Manage purchase orders, distributor invoices, or migrate opening stock for established shops.</p>
+          <p className="text-xs text-slate-500 font-medium mt-1">Manage purchase orders, distributor invoices, or migrate opening stock for established pharmacy stores.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => { setParsedDataSet([]); setViewMode('opening_stock'); }}
+            onClick={() => { setParsedData([]); setViewMode('opening_stock'); }}
             className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs px-4 py-2.5 rounded-2xl border border-emerald-300 shadow-sm transition flex items-center gap-1.5"
           >
             <Database className="w-4 h-4 text-emerald-600" /> Migrate opening stock
@@ -671,7 +669,7 @@ export default function PurchasesPage() {
           <div>
             <h3 className="text-base font-bold text-slate-950">Migrate Existing Opening Stock</h3>
             <p className="text-xs text-slate-500 mt-1 font-medium">
-              For established stores transitioning to software. Upload your physical count spreadsheet with current remaining quantities, actual selling prices/MRP, and batches without creating purchase orders.
+              For established stores transitioning to software. Upload your physical count spreadsheet with current remaining quantities, salt names, actual selling prices/MRP, and batches.
             </p>
           </div>
 
@@ -717,6 +715,7 @@ export default function PurchasesPage() {
                   <thead className="bg-emerald-50 text-emerald-800 sticky top-0 font-bold">
                     <tr>
                       <th className="p-3">Product Name</th>
+                      <th className="p-3">Salt Name</th>
                       <th className="p-3">Batch</th>
                       <th className="p-3">Expiry</th>
                       <th className="p-3">MRP</th>
@@ -727,6 +726,7 @@ export default function PurchasesPage() {
                     {parsedData.map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="p-3 font-bold text-slate-900">{row.product_name || row['Product Name'] || row['Item Name'] || row['Item'] || row['Name']}</td>
+                        <td className="p-3 text-slate-600">{row.salt_name || row['Salt Name'] || row['Salt'] || row['Composition']}</td>
                         <td className="p-3 font-mono text-slate-600">{row.batch_number || row['Batch'] || row['Batch No'] || row['BatchNumber']}</td>
                         <td className="p-3 text-slate-600">{row.expiry_date || row['Expiry'] || row['Exp'] || row['ExpiryDate']}</td>
                         <td className="p-3 font-semibold text-slate-900">₹{row.mrp || row['MRP']}</td>
