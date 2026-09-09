@@ -1663,7 +1663,7 @@ export default function POSPage() {
                   left: 0 !important;
                   top: 0 !important;
                   width: 100% !important;
-                  height: 100% !important;
+                  height: auto !important;
                   background: white !important;
                   display: block !important;
                   padding: 8mm !important;
