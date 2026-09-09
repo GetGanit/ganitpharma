@@ -209,8 +209,6 @@ export default function InvoicesPage() {
       `Thank you for visiting ${orgProfile.trading_name}!`
     );
 
-    // Trigger PDF print/save dialog simultaneously so user can save PDF to attach in WhatsApp
-    window.print();
     window.open(`https://wa.me/${phone ? '91' + phone : ''}?text=${msg}`, '_blank');
   };
 
