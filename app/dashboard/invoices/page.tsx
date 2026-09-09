@@ -11,6 +11,13 @@ export default function InvoicesPage() {
   const [invoiceNoQuery, setInvoiceNoQuery] = useState('');
   const [dateQuery, setDateQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+  const [orgProfile, setOrgProfile] = useState<any>({
+    trading_name: 'Ganit Pharma',
+    address: 'Bengaluru, Karnataka',
+    gstin: '29ABCDE1234F1Z5',
+    phone: '',
+    email: ''
+  });
 
   // Return Modal State
   const [returnModalInvoice, setReturnModalInvoice] = useState<any | null>(null);
@@ -33,6 +40,23 @@ export default function InvoicesPage() {
 
     const orgId = user.user_metadata?.organization_id;
     if (orgId) {
+      // Fetch organization profile for dynamic pharmacy details
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+
+      if (orgData) {
+        setOrgProfile({
+          trading_name: orgData.trading_name || orgData.name || 'Ganit Pharma',
+          address: orgData.address || 'Bengaluru, Karnataka',
+          gstin: orgData.gstin || orgData.gst || '29ABCDE1234F1Z5',
+          phone: orgData.phone || '',
+          email: orgData.email || ''
+        });
+      }
+
       let query = supabase
         .from('sales')
         .select('*, sale_items(*, products(product_name), product_batches(batch_number)), customers(customer_name, phone)')
@@ -168,9 +192,19 @@ export default function InvoicesPage() {
   };
 
   const sendWhatsAppInvoice = (inv: any) => {
-    const phone = inv.customers?.phone || '919999999999';
-    const msg = encodeURIComponent(`Hello ${inv.customers?.customer_name || 'Customer'}, here is your tax invoice ${inv.invoice_number} from GanitPharma. Total Amount: ₹${Number(inv.final_amount).toFixed(2)}. Thank you for visiting!`);
-    window.open(`https://wa.me/91${phone}?text=${msg}`, '_blank');
+    const phone = inv.customers?.phone || '';
+    const itemsSummary = inv.sale_items?.map((i: any) => `- ${i.products?.product_name} (Qty: ${i.quantity_sold}) : ₹${Number(i.total_price).toFixed(2)}`).join('\n') || '';
+    
+    const msg = encodeURIComponent(
+      `*${orgProfile.trading_name}* - Tax Invoice\n` +
+      `Invoice No: ${inv.invoice_number}\n` +
+      `Date: ${new Date(inv.created_at).toLocaleString()}\n` +
+      `Customer: ${inv.customers?.customer_name || 'Walk-in'}\n\n` +
+      `*Items Purchased:*\n${itemsSummary}\n\n` +
+      `*Net Payable: ₹${Number(inv.final_amount).toFixed(2)}*\n\n` +
+      `Thank you for visiting ${orgProfile.trading_name}!`
+    );
+    window.open(`https://wa.me/${phone ? '91' + phone : ''}?text=${msg}`, '_blank');
   };
 
   return (
@@ -336,30 +370,30 @@ export default function InvoicesPage() {
         </div>
       )}
 
-      {/* Tax Invoice Modal with Discount Display */}
+      {/* Tax Invoice Modal formatted strictly for 1 single page print */}
       {selectedInvoice && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-6 relative print:shadow-none print:w-full">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto print:p-0 print:bg-white">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl border border-slate-200 space-y-4 relative print:shadow-none print:w-full print:max-w-none print:border-none print:m-0 print:p-4 print:text-[11px] print:leading-tight">
             
-            <div className="flex justify-between items-start border-b border-slate-200 pb-4 print:hidden">
+            <div className="flex justify-between items-start border-b border-slate-200 pb-3 print:hidden">
               <div>
                 <h3 className="text-lg font-black text-slate-950">GST Tax Invoice</h3>
                 <span className="text-xs text-slate-500 font-medium">Original for Recipient</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={printTaxInvoice} className="bg-slate-950 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1">
-                  <Printer className="w-3.5 h-3.5" /> Print / PDF
+                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
                 </button>
                 <button onClick={() => setSelectedInvoice(null)} className="text-slate-500 hover:text-slate-900 font-bold px-2">✕</button>
               </div>
             </div>
 
-            <div className="space-y-4 text-xs text-slate-800">
-              <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+            <div className="space-y-3 text-xs text-slate-800 print:space-y-2">
+              <div className="flex justify-between items-start border-b border-slate-200 pb-3">
                 <div>
-                  <h1 className="text-xl font-black text-slate-950">Ganit<span className="text-amber-500">Pharma</span></h1>
-                  <p className="text-slate-500 font-medium">12 MG Road, Bengaluru, Karnataka - 560001</p>
-                  <p className="text-slate-500 font-mono mt-1">GSTIN: 29ABCDE1234F1Z5</p>
+                  <h1 className="text-lg font-black text-slate-950">{orgProfile.trading_name}</h1>
+                  <p className="text-slate-500 font-medium">{orgProfile.address}</p>
+                  <p className="text-slate-500 font-mono mt-0.5">GSTIN: {orgProfile.gstin}</p>
                 </div>
                 <div className="text-right">
                   <strong className="text-sm block">{selectedInvoice.invoice_number}</strong>
@@ -367,7 +401,7 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-200 print:bg-white print:border-slate-300 print:p-2">
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Customer Details</span>
                   <strong className="text-slate-950">{selectedInvoice.customers?.customer_name || 'Walk-in Customer'}</strong>
@@ -375,7 +409,7 @@ export default function InvoicesPage() {
                 </div>
                 <div className="text-right">
                   <span className="text-slate-400 block text-[10px] uppercase font-bold">Payment Status</span>
-                  <span className="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg font-black uppercase text-[10px]">
+                  <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-black uppercase text-[10px]">
                     {selectedInvoice.payment_status}
                   </span>
                 </div>
@@ -383,30 +417,30 @@ export default function InvoicesPage() {
 
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black">
-                    <th className="p-2.5">Item Description</th>
-                    <th className="p-2.5">Batch</th>
-                    <th className="p-2.5">Qty</th>
-                    <th className="p-2.5">Unit Price</th>
-                    <th className="p-2.5">GST %</th>
-                    <th className="p-2.5 text-right">Total (₹)</th>
+                  <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black print:bg-slate-200">
+                    <th className="p-2">Item Description</th>
+                    <th className="p-2">Batch</th>
+                    <th className="p-2">Qty</th>
+                    <th className="p-2">Unit Price</th>
+                    <th className="p-2">GST %</th>
+                    <th className="p-2 text-right">Total (₹)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {selectedInvoice.sale_items?.map((item: any, idx: number) => (
                     <tr key={idx}>
-                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                      <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                      <td className="p-2.5">{item.quantity_sold}</td>
-                      <td className="p-2.5 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
-                      <td className="p-2.5">{item.gst_percent}%</td>
-                      <td className="p-2.5 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
+                      <td className="p-2 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
+                      <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                      <td className="p-2">{item.quantity_sold}</td>
+                      <td className="p-2 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
+                      <td className="p-2">{item.gst_percent}%</td>
+                      <td className="p-2 text-right font-black">₹{Number(item.total_price).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
-              <div className="border-t border-slate-200 pt-3 space-y-1 text-right font-semibold">
+              <div className="border-t border-slate-200 pt-2 space-y-1 text-right font-semibold">
                 <div className="flex justify-between text-slate-600">
                   <span>Gross Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
@@ -421,13 +455,13 @@ export default function InvoicesPage() {
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t border-slate-100">
+                <div className="flex justify-between text-sm font-black text-slate-950 pt-1.5 border-t border-slate-100">
                   <span>Net Payable Amount:</span>
                   <span className="text-amber-600">₹{Number(selectedInvoice.final_amount).toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="text-center text-[10px] text-slate-400 pt-6 border-t border-slate-100 font-medium">
+              <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100 font-medium">
                 Certified that the particulars given above are true and correct. Computer Generated Tax Invoice.
               </div>
             </div>
