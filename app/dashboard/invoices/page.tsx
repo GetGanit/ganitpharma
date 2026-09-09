@@ -565,9 +565,7 @@ export default function InvoicesPage() {
               <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100 font-medium">
                 Certified that the particulars given above are true and correct. Computer Generated Tax Invoice.
               </div>
-              </div>
             </div>
-
           </div>
         </div>
       )}
