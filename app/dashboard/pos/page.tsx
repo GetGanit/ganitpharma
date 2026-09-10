@@ -709,10 +709,33 @@ export default function POSPage() {
       message: 'Are you sure you want to CANCEL this entire invoice? This will void the bill and restore all items into inventory.',
       onConfirm: async () => {
         setSoftwareConfirmConfig(null);
-        const { data: items } = await supabase
+
+        const { data: sale, error: saleFetchError } = await supabase
+          .from('sales')
+          .select('id, final_amount, payment_status')
+          .eq('id', invoiceId)
+          .single();
+
+        if (saleFetchError || !sale) {
+          setSoftwareAlertMsg(saleFetchError?.message || 'Unable to load the invoice for cancellation.');
+          return;
+        }
+
+        if (sale.payment_status === 'Cancelled' || sale.payment_status === 'Fully Returned') {
+          setSoftwareAlertMsg('This invoice has already been cancelled or fully returned.');
+          return;
+        }
+
+        const refundAmount = Number(sale.final_amount || 0);
+        const { data: items, error: itemsError } = await supabase
           .from('sale_items')
           .select('*')
           .eq('sale_id', invoiceId);
+
+        if (itemsError) {
+          setSoftwareAlertMsg(itemsError.message || 'Unable to load invoice items.');
+          return;
+        }
 
         if (items) {
           for (const item of items) {
@@ -724,21 +747,49 @@ export default function POSPage() {
                 .single();
 
               if (batch) {
-                await supabase
+                const { error: batchError } = await supabase
                   .from('product_batches')
-                  .update({ stock_qty: batch.stock_qty + item.quantity_sold })
+                  .update({ stock_qty: Number(batch.stock_qty || 0) + Number(item.quantity_sold || 0) })
                   .eq('id', item.batch_id);
+
+                if (batchError) {
+                  setSoftwareAlertMsg(batchError.message || 'Unable to restore inventory.');
+                  return;
+                }
               }
             }
           }
         }
 
-        await supabase
+        const { error: saleUpdateError } = await supabase
           .from('sales')
           .update({ payment_status: 'Cancelled', final_amount: 0 })
           .eq('id', invoiceId);
 
-        setSoftwareAlertMsg('Invoice successfully cancelled and stock restored!');
+        if (saleUpdateError) {
+          setSoftwareAlertMsg(saleUpdateError.message || 'Unable to cancel the invoice.');
+          return;
+        }
+
+        // All cancellation refunds are paid in cash, regardless of the original payment mode.
+        if (refundAmount > 0) {
+          const { error: refundError } = await supabase
+            .from('payments')
+            .insert([{
+              sale_id: invoiceId,
+              organization_id: (await supabase.auth.getUser()).data.user?.user_metadata?.organization_id,
+              payment_mode: 'cash',
+              amount: -refundAmount
+            }]);
+
+          if (refundError) {
+            setSoftwareAlertMsg(`Invoice cancelled, but the cash refund ledger entry could not be recorded: ${refundError.message}`);
+            fetchJournals();
+            return;
+          }
+        }
+
+        setSoftwareAlertMsg(`Invoice cancelled successfully. Cash refund: ₹${refundAmount.toFixed(2)}`);
         fetchJournals();
       }
     });
@@ -757,52 +808,106 @@ export default function POSPage() {
     if (!returnModalInvoice) return;
 
     let totalRefund = 0;
+    const returnItems: { item: any; returnQty: number; unitRefund: number }[] = [];
 
-    for (const item of returnModalInvoice.sale_items) {
+    for (const item of returnModalInvoice.sale_items || []) {
       const returnQty = Number(returnQuantities[item.id]) || 0;
+      const soldQty = Number(item.quantity_sold) || 0;
+
+      if (returnQty < 0) {
+        setSoftwareAlertMsg(`Return quantity for ${item.products?.product_name} cannot be negative.`);
+        return;
+      }
+
+      if (returnQty > soldQty) {
+        setSoftwareAlertMsg(`Return quantity for ${item.products?.product_name} cannot exceed sold quantity (${soldQty}).`);
+        return;
+      }
+
       if (returnQty > 0) {
-        if (returnQty > item.quantity_sold) {
-          setSoftwareAlertMsg(`Return quantity for ${item.products?.product_name} cannot exceed sold quantity (${item.quantity_sold}).`);
-          return;
-        }
-
-        const unitRefund = Number(item.total_price) / Number(item.quantity_sold);
+        const unitRefund = soldQty > 0 ? Number(item.total_price || 0) / soldQty : 0;
         totalRefund += unitRefund * returnQty;
-
-        if (item.batch_id) {
-          const { data: batch } = await supabase
-            .from('product_batches')
-            .select('stock_qty')
-            .eq('id', item.batch_id)
-            .single();
-
-          if (batch) {
-            await supabase
-              .from('product_batches')
-              .update({ stock_qty: batch.stock_qty + returnQty })
-              .eq('id', item.batch_id);
-          }
-        }
-
-        const newQtySold = Number(item.quantity_sold) - returnQty;
-        const newTotalPrice = Number(item.total_price) - (unitRefund * returnQty);
-        await supabase
-          .from('sale_items')
-          .update({ quantity_sold: newQtySold, total_price: newTotalPrice })
-          .eq('id', item.id);
+        returnItems.push({ item, returnQty, unitRefund });
       }
     }
 
-    const newFinalAmount = Math.max(0, Number(returnModalInvoice.final_amount) - totalRefund);
-    await supabase
+    if (returnItems.length === 0 || totalRefund <= 0) {
+      setSoftwareAlertMsg('Please enter a return quantity before confirming the return.');
+      return;
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const orgId = user?.user_metadata?.organization_id;
+    if (!orgId) {
+      setSoftwareAlertMsg('Pharmacy organization ID not found.');
+      return;
+    }
+
+    // Refunds are ALWAYS cash, even when the original sale was UPI/card/split payment.
+    const { error: refundError } = await supabase
+      .from('payments')
+      .insert([{
+        sale_id: returnModalInvoice.id,
+        organization_id: orgId,
+        payment_mode: 'cash',
+        amount: -totalRefund
+      }]);
+
+    if (refundError) {
+      setSoftwareAlertMsg(`Return was not completed because the cash refund could not be recorded: ${refundError.message}`);
+      return;
+    }
+
+    for (const { item, returnQty, unitRefund } of returnItems) {
+      if (item.batch_id) {
+        const { data: batch } = await supabase
+          .from('product_batches')
+          .select('stock_qty')
+          .eq('id', item.batch_id)
+          .single();
+
+        if (batch) {
+          const { error: batchError } = await supabase
+            .from('product_batches')
+            .update({ stock_qty: Number(batch.stock_qty || 0) + returnQty })
+            .eq('id', item.batch_id);
+
+          if (batchError) {
+            setSoftwareAlertMsg(`Refund recorded, but inventory could not be restocked: ${batchError.message}`);
+            return;
+          }
+        }
+      }
+
+      const newQtySold = Number(item.quantity_sold) - returnQty;
+      const newTotalPrice = Number(item.total_price || 0) - (unitRefund * returnQty);
+      const { error: itemUpdateError } = await supabase
+        .from('sale_items')
+        .update({ quantity_sold: newQtySold, total_price: Math.max(0, newTotalPrice) })
+        .eq('id', item.id);
+
+      if (itemUpdateError) {
+        setSoftwareAlertMsg(`Refund recorded, but the returned item could not be updated: ${itemUpdateError.message}`);
+        return;
+      }
+    }
+
+    const currentFinalAmount = Number(returnModalInvoice.final_amount || 0);
+    const newFinalAmount = Math.max(0, currentFinalAmount - totalRefund);
+    const { error: saleUpdateError } = await supabase
       .from('sales')
-      .update({ 
+      .update({
         final_amount: newFinalAmount,
         payment_status: newFinalAmount === 0 ? 'Fully Returned' : 'Partially Returned'
       })
       .eq('id', returnModalInvoice.id);
 
-    setSoftwareAlertMsg(`Return processed successfully! Refund amount: ₹${totalRefund.toFixed(2)}`);
+    if (saleUpdateError) {
+      setSoftwareAlertMsg(`Refund recorded, but the invoice total could not be updated: ${saleUpdateError.message}`);
+      return;
+    }
+
+    setSoftwareAlertMsg(`Return processed successfully! Refund amount: ₹${totalRefund.toFixed(2)} (Cash)`);
     setReturnModalInvoice(null);
     fetchJournals();
   };
