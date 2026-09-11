@@ -1181,17 +1181,19 @@ export default function POSPage() {
                           </td>
                           <td className="p-2.5 font-mono text-slate-700">₹{perUnitPrice.toFixed(2)}</td>
                           <td className="p-2.5 font-mono font-bold text-slate-950">₹{gross.toFixed(2)}</td>
-                          <td className="p-2.5 font-mono text-red-600 font-bold flex items-center gap-1.5">
-                            <span>{totalItemDisc > 0 ? `-₹${totalItemDisc.toFixed(2)} (${discPct}%)` : '—'}</span>
-                            <button 
-                              onClick={() => {
-                                setDiscountModalIndex(idx);
-                                setItemDiscountInput(item.discount_percent || '');
-                              }}
-                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-bold"
-                            >
-                              Edit
-                            </button>
+                          <td className="p-2.5">
+                            <div className="font-mono text-red-600 font-bold flex items-center gap-1.5">
+                              <span>{totalItemDisc > 0 ? `-₹${totalItemDisc.toFixed(2)} (${discPct}%)` : '—'}</span>
+                              <button 
+                                onClick={() => {
+                                  setDiscountModalIndex(idx);
+                                  setItemDiscountInput(item.discount_percent || '');
+                                }}
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded font-bold"
+                              >
+                                Edit
+                              </button>
+                            </div>
                           </td>
                           <td className="p-2.5 font-black text-slate-950">₹{netTotal.toFixed(2)}</td>
                           <td className="p-2.5 text-right">
@@ -1718,7 +1720,7 @@ export default function POSPage() {
                     setSelectedInvoice(pendingPrintInvoice);
                     setTimeout(() => {
                       window.print();
-                    }, 150);
+                    }, 300);
                   }
                 }}
                 className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-xs shadow-sm"
@@ -1782,7 +1784,7 @@ export default function POSPage() {
 
               @page a4Invoice {
                 size: A4 portrait;
-                margin: 0;
+                margin: 10mm;
               }
 
               @page thermal80Invoice {
@@ -1801,6 +1803,8 @@ export default function POSPage() {
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
+                  height: auto !important;
+                  min-height: 0 !important;
                 }
 
                 body {
@@ -1838,15 +1842,14 @@ export default function POSPage() {
                   box-shadow: none !important;
                   box-sizing: border-box !important;
                   margin: 0 !important;
+                  page-break-inside: avoid !important;
                 }
 
                 .printer-a4 .invoice-print-content {
                   page: a4Invoice;
                   width: 210mm !important;
                   max-width: 210mm !important;
-                  padding: 8mm !important;
-                  page-break-inside: avoid !important;
-                  break-inside: avoid-page !important;
+                  padding: 0 !important;
                 }
 
                 .printer-thermal80 .invoice-print-content {
@@ -1907,7 +1910,7 @@ export default function POSPage() {
                   font-weight: 900 !important;
                 }
 
-                .print\:hidden {
+                .print\\:hidden {
                   display: none !important;
                 }
               }
