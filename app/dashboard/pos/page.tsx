@@ -7,6 +7,7 @@ import { Receipt, Search, Trash2, CheckCircle2, AlertCircle, Package, Printer, M
 interface CartItem {
   id: string;
   product_name: string;
+  category?: string;
   batch_id: string;
   batch_number: string;
   selling_price: number;
@@ -93,6 +94,17 @@ export default function POSPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Keep the sale-success banner visible for 5 seconds only.
+  useEffect(() => {
+    if (!successMsg) return;
+
+    const timer = window.setTimeout(() => {
+      setSuccessMsg(null);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [successMsg]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -406,6 +418,7 @@ export default function POSPage() {
         {
           id: product.id,
           product_name: product.product_name,
+          category: product.category || 'Other',
           batch_id: batch.id,
           batch_number: batch.batch_number || 'DEFAULT',
           selling_price: sellingPrice,
@@ -1145,7 +1158,12 @@ export default function POSPage() {
 
                       return (
                         <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="p-2.5 font-bold text-slate-900">{item.product_name}</td>
+                          <td className="p-2.5 font-bold text-slate-900">
+                            <div>{item.product_name}</div>
+                            <span className="inline-block mt-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide">
+                              {item.category || 'Other'}
+                            </span>
+                          </td>
                           <td className="p-2.5 text-slate-600 font-mono">{item.batch_number}</td>
                           <td className="p-2.5">
                             <span className="bg-amber-100 text-amber-900 px-2.5 py-1 rounded-lg font-bold">
@@ -1700,7 +1718,7 @@ export default function POSPage() {
                     setSelectedInvoice(pendingPrintInvoice);
                     setTimeout(() => {
                       window.print();
-                    }, 300);
+                    }, 150);
                   }
                 }}
                 className="px-5 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-xs shadow-sm"
