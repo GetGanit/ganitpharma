@@ -70,7 +70,7 @@ export default function InvoicesPage() {
 
       let query = supabase
         .from('sales')
-        .select('*, sale_items(*, products(product_name), product_batches(batch_number)), customers(customer_name, phone)')
+        .select('*, sale_items(*, products(product_name, category), product_batches(batch_number)), customers(customer_name, phone)')
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false });
 
@@ -467,7 +467,14 @@ export default function InvoicesPage() {
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {returnModalInvoice.sale_items?.map((item: any) => (
                     <tr key={item.id}>
-                      <td className="p-2.5 font-bold text-slate-950">{item.products?.product_name}</td>
+                      <td className="p-2.5 font-bold text-slate-950">
+                        <div>{item.products?.product_name}</div>
+                        {item.products?.category && (
+                          <div className="text-[9px] uppercase tracking-wide text-slate-400 font-semibold mt-0.5">
+                            {item.products.category}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-2.5 font-mono text-slate-600">{item.product_batches?.batch_number}</td>
                       <td className="p-2.5 font-bold">{item.quantity_sold}</td>
                       <td className="p-2.5">
@@ -567,38 +574,45 @@ export default function InvoicesPage() {
               </div>
 
               <div className="a4-only">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black print:bg-slate-200">
-                    <th className="p-2">Item Description</th>
-                    <th className="p-2">Batch</th>
-                    <th className="p-2">Qty</th>
-                    <th className="p-2">Unit Price</th>
-                    <th className="p-2">GST %</th>
-                    <th className="p-2">Disc (₹)</th>
-                    <th className="p-2 text-right">Total (₹)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {selectedInvoice.sale_items?.map((item: any, idx: number) => {
-                    const listTotal = Number(item.unit_price || 0) * Number(item.quantity_sold || 1);
-                    const actualTotal = Number(item.total_price || 0);
-                    const discAmount = Math.max(0, listTotal - actualTotal);
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200 uppercase text-slate-600 text-[10px] font-black print:bg-slate-200">
+                      <th className="p-2">Item Description</th>
+                      <th className="p-2">Batch</th>
+                      <th className="p-2">Qty</th>
+                      <th className="p-2">Unit Price</th>
+                      <th className="p-2">GST %</th>
+                      <th className="p-2">Disc (₹)</th>
+                      <th className="p-2 text-right">Total (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {selectedInvoice.sale_items?.map((item: any, idx: number) => {
+                      const listTotal = Number(item.unit_price || 0) * Number(item.quantity_sold || 1);
+                      const actualTotal = Number(item.total_price || 0);
+                      const discAmount = Math.max(0, listTotal - actualTotal);
 
-                    return (
-                      <tr key={idx}>
-                        <td className="p-2 font-bold text-slate-950">{item.products?.product_name || 'Pharmaceutical Item'}</td>
-                        <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
-                        <td className="p-2">{item.quantity_sold}</td>
-                        <td className="p-2 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
-                        <td className="p-2">{item.gst_percent}%</td>
-                        <td className="p-2 font-mono text-red-600">{discAmount > 0 ? `₹${discAmount.toFixed(2)}` : '—'}</td>
-                        <td className="p-2 text-right font-black">₹{actualTotal.toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={idx}>
+                          <td className="p-2 font-bold text-slate-950">
+                            <div>{item.products?.product_name || 'Pharmaceutical Item'}</div>
+                            {item.products?.category && (
+                              <div className="text-[8px] uppercase tracking-wide text-slate-400 font-semibold mt-0.5">
+                                {item.products.category}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2 font-mono text-slate-600">{item.product_batches?.batch_number || 'DEFAULT'}</td>
+                          <td className="p-2">{item.quantity_sold}</td>
+                          <td className="p-2 font-mono">₹{Number(item.unit_price || 0).toFixed(2)}</td>
+                          <td className="p-2">{item.gst_percent}%</td>
+                          <td className="p-2 font-mono text-red-600">{discAmount > 0 ? `₹${discAmount.toFixed(2)}` : '—'}</td>
+                          <td className="p-2 text-right font-black">₹{actualTotal.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               <div className="thermal-only text-xs">
@@ -623,23 +637,58 @@ export default function InvoicesPage() {
                     const grossItemTotal = unitPrice * qty;
                     const netItemTotal = Number(item.total_price) || 0;
                     const itemDiscVal = Math.max(0, grossItemTotal - netItemTotal);
+
                     return (
                       <div key={idx} className="mb-2">
-                        <div className="thermal-row"><span className="thermal-item-name flex-1">{item.products?.product_name || 'Pharmaceutical Item'}</span><strong>₹{netItemTotal.toFixed(2)}</strong></div>
-                        <div className="thermal-row thermal-small text-slate-600"><span>Qty {qty} × ₹{unitPrice.toFixed(2)}</span><span>GST {item.gst_percent}%</span></div>
-                        <div className="thermal-small text-slate-500">Batch: {item.product_batches?.batch_number || 'DEFAULT'}{itemDiscVal > 0 ? ` • Disc: ₹${itemDiscVal.toFixed(2)}` : ''}</div>
+                        <div className="thermal-row">
+                          <span className="thermal-item-name flex-1">
+                            {item.products?.product_name || 'Pharmaceutical Item'}
+                          </span>
+                          <strong>₹{netItemTotal.toFixed(2)}</strong>
+                        </div>
+
+                        {item.products?.category && (
+                          <div className="thermal-small text-slate-500 uppercase font-semibold">
+                            {item.products.category}
+                          </div>
+                        )}
+
+                        <div className="thermal-row thermal-small text-slate-600">
+                          <span>Qty {qty} × ₹{unitPrice.toFixed(2)}</span>
+                          <span>GST {item.gst_percent}%</span>
+                        </div>
+
+                        <div className="thermal-small text-slate-500">
+                          Batch: {item.product_batches?.batch_number || 'DEFAULT'}
+                          {itemDiscVal > 0 ? ` • Disc: ₹${itemDiscVal.toFixed(2)}` : ''}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
 
                 <div className="space-y-1">
-                  <div className="thermal-row"><span>Subtotal</span><span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span></div>
+                  <div className="thermal-row">
+                    <span>Subtotal</span>
+                    <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
+                  </div>
+
                   {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
-                    <div className="thermal-row"><span>Discount</span><span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span></div>
+                    <div className="thermal-row">
+                      <span>Discount</span>
+                      <span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span>
+                    </div>
                   )}
-                  <div className="thermal-row"><span>Included GST</span><span>₹{Number(selectedInvoice.gst_total || 0).toFixed(2)}</span></div>
-                  <div className="thermal-row thermal-total border-t border-slate-300 pt-1 mt-1"><span>NET PAYABLE</span><span>₹{Number(selectedInvoice.final_amount).toFixed(2)}</span></div>
+
+                  <div className="thermal-row">
+                    <span>Included GST</span>
+                    <span>₹{Number(selectedInvoice.gst_total || 0).toFixed(2)}</span>
+                  </div>
+
+                  <div className="thermal-row thermal-total border-t border-slate-300 pt-1 mt-1">
+                    <span>NET PAYABLE</span>
+                    <span>₹{Number(selectedInvoice.final_amount).toFixed(2)}</span>
+                  </div>
                 </div>
 
                 <div className="thermal-center border-t border-slate-300 mt-2 pt-2 thermal-small">
@@ -653,16 +702,19 @@ export default function InvoicesPage() {
                   <span>Gross Subtotal:</span>
                   <span>₹{Number(selectedInvoice.subtotal).toFixed(2)}</span>
                 </div>
+
                 {Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount) > 0.5 && (
                   <div className="flex justify-between text-red-600 font-bold">
                     <span>Discount Applied:</span>
                     <span>-₹{(Number(selectedInvoice.subtotal) - Number(selectedInvoice.final_amount)).toFixed(2)}</span>
                   </div>
                 )}
+
                 <div className="flex justify-between text-slate-600">
                   <span>Included GST Tax:</span>
                   <span>₹{Number(selectedInvoice.gst_total).toFixed(2)}</span>
                 </div>
+
                 <div className="flex justify-between text-sm font-black text-slate-950 pt-1.5 border-t border-slate-100">
                   <span>Net Payable Amount:</span>
                   <span className="text-amber-600">₹{Number(selectedInvoice.final_amount).toFixed(2)}</span>
